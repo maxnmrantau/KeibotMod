@@ -382,6 +382,7 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
   position: relative; width: 100%; max-width: 800px; margin: 0 auto 16px auto;
   aspect-ratio: 16 / 9; height: auto; border-radius: 8px; overflow: hidden;
   border: 1px solid var(--border); background: var(--bg); box-shadow: inset 0 0 40px rgba(0,0,0,0.7);
+  transition: transform 0.06s ease-out;
 }
 .preview-bg-vid, .preview-bg-img {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: none;
@@ -572,8 +573,8 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
         <div class="card-head"><span class="card-title">🗂 HISTORY</span></div>
         <div class="card-body" style="padding:0 16px 8px;overflow-x:auto">
           <table class="tbl" style="min-width:500px">
-            <thead><tr><th style="width:8%">ID</th><th style="width:50%">JUDUL</th><th>STATUS</th></tr></thead>
-            <tbody id="historyTbl"><tr><td colspan="3" style="text-align:center;padding:16px;color:var(--muted);font-family:var(--font-m);font-size:11px">Belum ada history.</td></tr></tbody>
+            <thead><tr><th style="width:8%">ID</th><th style="width:42%">JUDUL</th><th style="width:18%">WAKTU PROSES</th><th>STATUS</th></tr></thead>
+            <tbody id="historyTbl"><tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted);font-family:var(--font-m);font-size:11px">Belum ada history.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -756,6 +757,12 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
 	                <option value="720">720p (1280×720)</option>
 	                <option value="1080">1080p (1920×1080)</option>
 	              </select>
+	              <span style="font-size:11px;font-weight:700;color:var(--text);margin-left:6px;">⚡ Preset Render</span>
+	              <select id="bc-render-speed" style="padding:3px 6px;font-size:10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);" title="Pilih kecepatan render FFmpeg">
+	                <option value="ultrafast" selected>⚡ Ultra Fast (3-4x Cepat - Rekomendasi VPS)</option>
+	                <option value="veryfast">🏎️ Very Fast (Standar)</option>
+	                <option value="fast">🎯 Fast (High Quality)</option>
+	              </select>
 	            </div>
 	          </div>
         </div>
@@ -840,7 +847,8 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
 	            <div class="fg" style="margin-bottom:0">
 	              <label class="fl" style="font-size:10px;">🎨 Efek Visualizer</label>
 	              <select id="bc-effect-type" onchange="onEffectTypeChange()" style="font-size:10px;padding:3px 4px;">
-	                <option value="spectrum">◉ Spectrum Bars</option>
+	                <option value="none">🚫 Nonaktif (Off / Tanpa Visualizer)</option>
+	                <option value="spectrum" selected>◉ Spectrum Bars</option>
 	                <option value="circular">◎ Circular Spectrum</option>
 	                <option value="waveform">∿ Waveform</option>
 	                <option value="mirror">⬒ Mirror Spectrum</option>
@@ -861,6 +869,24 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
 	                <option value="manual">Manual</option>
 	                <option value="random">🎲 Random Acak</option>
 	                <option value="smart">🎯 Smart Random</option>
+	              </select>
+	            </div>
+	          </div>
+	          <div class="g2" style="margin-bottom:8px">
+	            <div class="fg" style="margin-bottom:0">
+	              <label class="fl" style="font-size:10px;">💥 Jedag-Jedug (Bass Bounce)</label>
+	              <select id="bc-jj-mode" style="font-size:10px;padding:3px 4px;">
+	                <option value="off" selected>🚫 Nonaktif (Off)</option>
+	                <option value="soft">🌸 Lembut (Smooth Bounce)</option>
+	                <option value="hard">🔥 Mantap (Hard Jedag-Jedug)</option>
+	              </select>
+	            </div>
+	            <div class="fg" style="margin-bottom:0;">
+	              <label class="fl" style="font-size:10px;">💡 Efek Lampu (Flash / Strobe)</label>
+	              <select id="bc-flash-mode" style="font-size:10px;padding:3px 4px;">
+	                <option value="off" selected>🚫 Nonaktif (Off)</option>
+	                <option value="white">⚡ Flash Putih (Strobe Club)</option>
+	                <option value="neon">✨ Glow Neon (Warna Top)</option>
 	              </select>
 	            </div>
 	          </div>
@@ -1052,6 +1078,12 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
               <div class="sg" style="display:flex; flex-direction:column; gap:4px;">
                   <div class="sg-lbl">✨ Particle Style</div>
                   <select id="bc-particle-type" style="width:100%;font-size:10px;padding:3px 4px;border-radius:4px;background:var(--surface);color:var(--text);border:1px solid var(--border);" onchange="prev_particles=[]">
+                      <option value="none">🚫 Nonaktif (Off / Tanpa Partikel)</option>
+                      <option value="embers" selected>🌟 Embers / Fireflies (Estetik / Rekomendasi)</option>
+                      <option value="drift_sparks">⚡ Drift Sparks (Phonk / High Energy)</option>
+                      <option value="golden_dust">✨ Golden Dust (Afro / Warm Vibe)</option>
+                      <option value="twinkle">✨ Star Twinkle (Kilau Bintang)</option>
+                      <option value="bokeh">🔮 Glowing Bokeh (Bulatan Cahaya Lembut)</option>
                       <option value="sparkle">✦ Sparkle</option>
                       <option value="fireworks">🎆 Fireworks</option>
                       <option value="trail">☄ Trail</option>
@@ -2057,6 +2089,7 @@ function processBatch() {
     use_timestamp: document.getElementById('bc-use-timestamp') ? document.getElementById('bc-use-timestamp').checked : false,
     output_dest: document.getElementById('bc-output-dest') ? document.getElementById('bc-output-dest').value : 'youtube',
     resolution: document.getElementById('bc-resolution') ? document.getElementById('bc-resolution').value : '720',
+    render_speed: document.getElementById('bc-render-speed') ? document.getElementById('bc-render-speed').value : 'ultrafast',
     vps_folder: localStorage.getItem('vps_folder') || '/root/keibot-output',
     smart_cut: document.getElementById('bc-smart-cut') ? document.getElementById('bc-smart-cut').checked : false,
     cut_duration: document.getElementById('bc-cut-duration') ? parseInt(document.getElementById('bc-cut-duration').value) || 5 : 5,
@@ -2116,6 +2149,9 @@ function getVisConfig() {
     use_beat_pulse: document.getElementById('bc-use-beat-pulse') ? document.getElementById('bc-use-beat-pulse').checked : false,
     particle_type: document.getElementById('bc-particle-type') ? document.getElementById('bc-particle-type').value : 'sparkle',
     fade_duration: document.getElementById('bc-fade') ? parseFloat(document.getElementById('bc-fade').value) : 0,
+    // jedag-jedug & lampu flash
+    jj_mode: document.getElementById('bc-jj-mode') ? document.getElementById('bc-jj-mode').value : 'off',
+    flash_mode: document.getElementById('bc-flash-mode') ? document.getElementById('bc-flash-mode').value : 'off',
     // watermark settings
     use_watermark: document.getElementById('bc-use-watermark') ? document.getElementById('bc-use-watermark').checked : false,
     wm_text: document.getElementById('bc-wm-text') ? document.getElementById('bc-wm-text').value : '',
@@ -2165,9 +2201,15 @@ function loadVisPreset(name) {
 
   // efek visualizer & beat pulse
   const effEl = document.getElementById('bc-effect-type');
-  if (effEl && p.effect_type) effEl.value = p.effect_type;
+  if (effEl && p.effect_type) { effEl.value = p.effect_type; onEffectTypeChange(); }
   const bpEl = document.getElementById('bc-use-beat-pulse');
   if (bpEl) bpEl.checked = !!p.use_beat_pulse;
+
+  // jedag-jedug & lampu flash
+  const jjEl = document.getElementById('bc-jj-mode');
+  if (jjEl && p.jj_mode !== undefined) jjEl.value = p.jj_mode;
+  const flEl = document.getElementById('bc-flash-mode');
+  if (flEl && p.flash_mode !== undefined) flEl.value = p.flash_mode;
 
   // particle style
   const ptEl = document.getElementById('bc-particle-type');
@@ -2408,6 +2450,8 @@ function updatePlaylistTracker() {
 }
 
 let prev_bars = null;
+let prev_zoom = 1.0;
+let prev_flash = 0.0;
 function drawLivePreview() {
   if (vCtx && visCanvas && document.getElementById('panel-batch').classList.contains('active') && document.getElementById('bs-3').style.display !== 'none') {
     const cw = visCanvas.width; const ch = visCanvas.height; vCtx.clearRect(0, 0, cw, ch); const cfg = getVisConfig();
@@ -2426,6 +2470,33 @@ function drawLivePreview() {
       prev_bars[i] = (prev_bars[i] * 0.85) + (target * 0.15);
     }
 
+    // ── simulasi jedag-jedug (bass bounce) & lampu flash ──
+    const jjMode = cfg.jj_mode || 'off';
+    const flMode = cfg.flash_mode || 'off';
+    const beatSim = Math.abs(Math.sin(timeTick / 12)) * Math.sin(timeTick / 20);
+    const isBeat = beatSim > 0.72;
+
+    if (jjMode !== 'off' && isBeat) {
+      const targetZ = jjMode === 'hard' ? 1.055 : 1.028;
+      if (targetZ > prev_zoom) prev_zoom = targetZ;
+    }
+    prev_zoom = prev_zoom * 0.75 + 1.0 * 0.25;
+
+    // Terapkan zoom halus ke preview container (background + canvas)
+    const pCont = document.getElementById('preview-container');
+    if (pCont) {
+      if (jjMode !== 'off' && prev_zoom > 1.003) {
+        pCont.style.transform = `scale(${prev_zoom.toFixed(4)})`;
+      } else if (pCont.style.transform) {
+        pCont.style.transform = '';
+      }
+    }
+
+    if (flMode !== 'off' && isBeat) {
+      prev_flash = Math.max(prev_flash, 0.40);
+    }
+    prev_flash = prev_flash * 0.68;
+
     // ── beat pulse (additive overlay) ──
     if (cfg.use_beat_pulse) {
       const beatSim = Math.abs(Math.sin(timeTick / 12)) * Math.sin(timeTick / 20);
@@ -2440,7 +2511,9 @@ function drawLivePreview() {
 
     // ── dispatch efek utama ──
     const fx = cfg.effect_type || 'spectrum';
-    if (fx === 'circular') {
+    if (fx === 'none' || fx === 'off') {
+      // Efek visualizer dinonaktifkan: tidak menggambar apa pun
+    } else if (fx === 'circular') {
       drawPreviewCircular(cw, ch, cfg);
     } else if (fx === 'waveform') {
       drawPreviewWaveform(cw, ch, cfg);
@@ -2469,7 +2542,9 @@ function drawLivePreview() {
     }
 
     // ── particles (dispatch by type) ──
-    drawPreviewParticles(cw, ch, cfg);
+    if (cfg.particle_type !== 'none' && cfg.particle_type !== 'off' && (parseInt(cfg.part_amount) || 0) > 0) {
+      drawPreviewParticles(cw, ch, cfg);
+    }
 
     // ── fade transisi preview ──
     if (cfg.fade_duration > 0 && playlistData.length > 0) {
@@ -2705,6 +2780,14 @@ function drawLivePreview() {
 	      vCtx.fillText(tsText, tsx+1, tsy+1);
 	      vCtx.fillStyle = tsColor;
 	      vCtx.fillText(tsText, tsx, tsy);
+	    }
+
+	    // ── efek lampu flash (strobe / glow) di preview ──
+	    if (flMode !== 'off' && prev_flash > 0.02) {
+	      vCtx.fillStyle = flMode === 'neon' ? (cfg.color_top || '#00e5ff') : '#ffffff';
+	      vCtx.globalAlpha = Math.min(0.40, prev_flash);
+	      vCtx.fillRect(0, 0, cw, ch);
+	      vCtx.globalAlpha = 1;
 	    }
 
 	    // ── playlist tracker (highlight lagu aktif) ──
@@ -3046,178 +3129,390 @@ function drawPreviewHalftone(cw, ch, cfg) {
 // ════════ PREVIEW: Particles (multi-tipe) ════════
 let prev_particles = [];
 function drawPreviewParticles(cw, ch, cfg) {
-  const pType = cfg.particle_type || 'sparkle';
+  const pType = (cfg.particle_type || 'embers').toLowerCase();
+  if (pType === 'none' || pType === 'off') {
+    prev_particles = [];
+    return;
+  }
   const beatSim = Math.abs(Math.sin(timeTick / 12)) * Math.sin(timeTick / 20);
-  const isBeat = beatSim > 0.7;
+  const isBeat = beatSim > 0.72;
 
   // particle settings
-  const partSizeMult = cfg.part_size === 'small' ? 0.6 : cfg.part_size === 'large' ? 1.5 : 1.0;
-  const partLifeMult = cfg.part_life === 'short' ? 0.5 : cfg.part_life === 'long' ? 1.8 : 1.0;
-  const partAlpha = cfg.part_opacity !== undefined ? parseFloat(cfg.part_opacity) : 1.0;
+  const partSizeMult = cfg.part_size === 'small' ? 0.65 : cfg.part_size === 'large' ? 1.6 : 1.0;
+  const partLifeMult = cfg.part_life === 'short' ? 0.6 : cfg.part_life === 'long' ? 1.8 : 1.0;
+  const partAlpha = cfg.part_opacity !== undefined ? Math.max(0.1, parseFloat(cfg.part_opacity)) : 1.0;
   const partDensityMult = cfg.part_density === 'low' ? 0.5 : cfg.part_density === 'high' ? 1.8 : 1.0;
+  const pAmt = parseInt(cfg.part_amount) || 3;
 
-  // spawn saat beat simulasi
-  if (isBeat && cfg.part_amount > 0) {
-    const spawnCount = Math.min(Math.ceil(cfg.part_amount * partDensityMult), 12);
-    for (let s = 0; s < spawnCount; s++) {
+  // 1. AMBIENT POPULATION (Layar preview selalu hidup & estetik)
+  const targetAmbient = Math.max(10, Math.min(80, Math.ceil((pAmt + 3) * 6 * partDensityMult)));
+  while (prev_particles.length < targetAmbient) {
+    const initY = prev_particles.length < (targetAmbient / 2) ? Math.random() * ch : ch * 0.7 + Math.random() * (ch * 0.3);
+    if (pType === 'embers' || pType === 'fireflies') {
+      prev_particles.push({
+        x: Math.random() * cw, y: initY,
+        vx: (Math.random() - 0.5) * 0.6, vy: -(0.7 + Math.random() * 1.3),
+        r: (3.0 + Math.random() * 4.0) * partSizeMult,
+        life: (90 + Math.random() * 90) * partLifeMult, max_life: 180,
+        phase: Math.random() * Math.PI * 2, type: 'embers'
+      });
+    } else if (pType === 'twinkle') {
+      prev_particles.push({
+        x: Math.random() * cw, y: Math.random() * ch,
+        vx: (Math.random() - 0.5) * 0.8, vy: (Math.random() - 0.5) * 0.8,
+        r: (2.5 + Math.random() * 3.5) * partSizeMult,
+        life: (60 + Math.random() * 80) * partLifeMult, max_life: 140,
+        phase: Math.random() * Math.PI * 2, type: 'twinkle'
+      });
+    } else if (pType === 'bokeh') {
+      prev_particles.push({
+        x: Math.random() * cw, y: initY,
+        vx: (Math.random() - 0.5) * 0.4, vy: -(0.3 + Math.random() * 0.5),
+        r: (12.0 + Math.random() * 18.0) * partSizeMult,
+        life: (120 + Math.random() * 100) * partLifeMult, max_life: 220,
+        phase: Math.random() * Math.PI * 2, type: 'bokeh'
+      });
+    } else if (pType === 'snow') {
+      prev_particles.push({
+        x: Math.random() * cw, y: -10 + Math.random() * (ch + 10),
+        vx: (Math.random() - 0.5) * 0.8, vy: 0.5 + Math.random() * 1.0,
+        r: (1.5 + Math.random() * 2.5) * partSizeMult,
+        life: (100 + Math.random() * 100) * partLifeMult, max_life: 200,
+        phase: Math.random() * Math.PI * 2, type: 'snow'
+      });
+    } else if (pType === 'petals') {
+      prev_particles.push({
+        x: Math.random() * cw, y: -10 + Math.random() * (ch + 10),
+        vx: (Math.random() - 0.5) * 1.2, vy: 0.6 + Math.random() * 1.2,
+        r: (3.5 + Math.random() * 4.0) * partSizeMult,
+        life: (100 + Math.random() * 100) * partLifeMult, max_life: 200,
+        rot: Math.random() * Math.PI, phase: Math.random() * Math.PI * 2, type: 'petals'
+      });
+    } else if (pType === 'bubbles') {
+      prev_particles.push({
+        x: Math.random() * cw, y: initY,
+        vx: (Math.random() - 0.5) * 0.6, vy: -(0.6 + Math.random() * 1.2),
+        r: (3.5 + Math.random() * 6.0) * partSizeMult,
+        life: (80 + Math.random() * 80) * partLifeMult, max_life: 160,
+        phase: Math.random() * Math.PI * 2, type: 'bubbles'
+      });
+    } else if (pType === 'rain') {
+      prev_particles.push({
+        x: Math.random() * cw, y: -20 + Math.random() * (ch + 20),
+        vx: -(0.5 + Math.random() * 0.8), vy: 7 + Math.random() * 5,
+        r: 1.5 * partSizeMult,
+        life: (40 + Math.random() * 40) * partLifeMult, max_life: 80,
+        phase: Math.random() * Math.PI * 2, type: 'rain'
+      });
+    } else if (pType === 'drift_sparks' || pType === 'phonk' || pType === 'sparks') {
+      prev_particles.push({
+        x: Math.random() * cw, y: ch * 0.25 + Math.random() * (ch * 0.75),
+        vx: (Math.random() < 0.5 ? -1 : 1) * (2.5 + Math.random() * 4.0),
+        vy: -(1.2 + Math.random() * 3.3),
+        r: (2.0 + Math.random() * 2.5) * partSizeMult,
+        life: (25 + Math.random() * 30) * partLifeMult, max_life: 55,
+        phase: Math.random() * Math.PI * 2, type: 'drift_sparks'
+      });
+    } else if (pType === 'golden_dust' || pType === 'afro' || pType === 'gold_dust') {
+      prev_particles.push({
+        x: Math.random() * cw, y: initY,
+        vx: (Math.random() - 0.5) * 0.7, vy: -(0.4 + Math.random() * 0.7),
+        r: (2.5 + Math.random() * 3.0) * partSizeMult,
+        life: (110 + Math.random() * 100) * partLifeMult, max_life: 210,
+        phase: Math.random() * Math.PI * 2, type: 'golden_dust'
+      });
+    } else { // sparkle
+      prev_particles.push({
+        x: Math.random() * cw, y: Math.random() * ch,
+        vx: (Math.random() - 0.5) * 2.0, vy: (Math.random() - 0.5) * 2.0,
+        r: (2.0 + Math.random() * 3.5) * partSizeMult,
+        life: (40 + Math.random() * 50) * partLifeMult, max_life: 90,
+        phase: Math.random() * Math.PI * 2, type: 'sparkle'
+      });
+    }
+  }
+
+  // 2. AUDIO REACTIVE BURST
+  if (isBeat && pAmt > 0) {
+    const burstCount = Math.min(Math.ceil(pAmt * partDensityMult * 0.6), 8);
+    for (let s = 0; s < burstCount; s++) {
       if (pType === 'fireworks') {
         prev_particles.push({
-          x: cw * (0.3 + Math.random() * 0.4), y: ch * (0.6 + Math.random() * 0.3),
-          vx: (Math.random() - 0.5) * 8, vy: -(Math.random() * 6 + 2),
-          r: (2 + Math.random() * 3) * partSizeMult, life: (30 + Math.random() * 30) * partLifeMult, type: 'fw'
+          x: cw * (0.35 + Math.random() * 0.3), y: ch * (0.6 + Math.random() * 0.25),
+          vx: (Math.random() - 0.5) * 7, vy: -(Math.random() * 5 + 3),
+          r: (2.5 + Math.random() * 3.5) * partSizeMult, life: (35 + Math.random() * 35) * partLifeMult, max_life: 70, type: 'fw'
         });
       } else if (pType === 'trail') {
         prev_particles.push({
           x: Math.random() * cw, y: Math.random() * ch * 0.5,
-          vx: (Math.random() - 0.5) * 5, vy: 2 + Math.random() * 4,
-          r: (2 + Math.random() * 2) * partSizeMult, life: (40 + Math.random() * 30) * partLifeMult, type: 'tr'
-        });
-      } else if (pType === 'petals') {
-        prev_particles.push({
-          x: Math.random() * cw, y: -10,
-          vx: (Math.random() - 0.5) * 2, vy: 0.5 + Math.random() * 1.5,
-          r: (3 + Math.random() * 3) * partSizeMult, life: (80 + Math.random() * 40) * partLifeMult, rot: Math.random() * Math.PI, type: 'pt'
+          vx: (Math.random() - 0.5) * 4, vy: 2 + Math.random() * 4,
+          r: (2.5 + Math.random() * 2.5) * partSizeMult, life: (40 + Math.random() * 30) * partLifeMult, max_life: 70, type: 'tr'
         });
       } else if (pType === 'smoke') {
         prev_particles.push({
-          x: cw * (0.1 + Math.random() * 0.8), y: ch * (0.7 + Math.random() * 0.3),
-          vx: (Math.random() - 0.5) * 1, vy: -(0.5 + Math.random() * 1.2),
-          r: 2 * partSizeMult, life: (60 + Math.random() * 60) * partLifeMult, grow: 0.03 + Math.random() * 0.06, type: 'sm'
+          x: cw * (0.15 + Math.random() * 0.7), y: ch * (0.7 + Math.random() * 0.3),
+          vx: (Math.random() - 0.5) * 1.0, vy: -(0.6 + Math.random() * 1.0),
+          r: 2.5 * partSizeMult, life: (50 + Math.random() * 50) * partLifeMult, max_life: 100, grow: 0.04 + Math.random() * 0.06, type: 'sm'
         });
-      } else if (pType === 'snow') {
+      } else if (pType === 'drift_sparks' || pType === 'phonk' || pType === 'sparks') {
+        const angle = -Math.PI * (0.12 + Math.random() * 0.76);
+        const speed = 6 + Math.random() * 9;
         prev_particles.push({
-          x: Math.random() * cw, y: -10,
-          vx: (Math.random() - 0.5) * 1.2, vy: 0.3 + Math.random() * 1.0,
-          r: (1 + Math.random() * 2) * partSizeMult, life: Math.ceil((ch + 20) / (0.3 + Math.random() * 1.0)) * partLifeMult + 20, type: 'sn'
+          x: cw * (0.2 + Math.random() * 0.6), y: ch * (0.55 + Math.random() * 0.33),
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+          r: (2.5 + Math.random() * 2.5) * partSizeMult, life: (20 + Math.random() * 25) * partLifeMult, max_life: 45, extra: 1, type: 'drift_sparks'
         });
-      } else if (pType === 'rain') {
+      } else if (pType === 'golden_dust' || pType === 'afro' || pType === 'gold_dust') {
         prev_particles.push({
-          x: Math.random() * cw, y: -20,
-          vx: -(0.3 + Math.random() * 0.8), vy: 5 + Math.random() * 4,
-          r: 1 * partSizeMult, life: Math.ceil((ch + 40) / (5 + Math.random() * 4)) * partLifeMult + 10, type: 'rn'
-        });
-      } else if (pType === 'bubbles') {
-        prev_particles.push({
-          x: cw * (0.1 + Math.random() * 0.8), y: ch * (0.8 + Math.random() * 0.2),
-          vx: (Math.random() - 0.5) * 1, vy: -(0.8 + Math.random() * 1.2),
-          r: (3 + Math.random() * 5) * partSizeMult, life: (60 + Math.random() * 60) * partLifeMult, type: 'bb'
-        });
-      } else { // sparkle
-        prev_particles.push({
-          x: Math.random() * cw, y: Math.random() * ch,
-          vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
-          r: (2 + Math.random() * 4) * partSizeMult, life: (20 + Math.random() * 20) * partLifeMult, type: 'sp'
+          x: cw * (0.1 + Math.random() * 0.8), y: ch * (0.65 + Math.random() * 0.3),
+          vx: (Math.random() - 0.5) * 1.6, vy: -(1.0 + Math.random() * 1.5),
+          r: (3.0 + Math.random() * 3.0) * partSizeMult, life: (80 + Math.random() * 70) * partLifeMult, max_life: 150, type: 'golden_dust'
         });
       }
     }
   }
 
-  // update & draw
-  const spd = 1.0 + cfg.part_speed * 0.5;
+  // 3. UPDATE FISIKA & DRAWING CANVAS
+  const spd = 1.0 + (parseFloat(cfg.part_speed) || 1.0) * 0.4;
   const alive = [];
-  vCtx.fillStyle = cfg.color_part;
-  vCtx.globalAlpha = partAlpha;
-  for (const p of prev_particles) {
-    p.x += p.vx * spd; p.y += p.vy * spd;
-    p.life--;
+  const beatBoost = isBeat ? 0.35 : 0.0;
 
-    if (p.type === 'fw') {
-      p.vy += 0.2 * spd; // gravitasi
-      p.r -= 0.05;
-      if (p.r > 0 && p.life > 0 && p.y < ch + 20) {
-        vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.fill();
-        alive.push(p);
-      }
+  for (const p of prev_particles) {
+    p.life--;
+    if (p.life <= 0) continue;
+
+    const age = (p.max_life || 100) - p.life;
+    const fade = Math.min(1.0, Math.min(age / 15, p.life / 20));
+
+    // ⚡ DRIFT SPARKS (PHONK)
+    if (p.type === 'drift_sparks') {
+      p.vx *= 0.97;
+      p.vy += 0.08 * spd;
+      p.x += p.vx * spd;
+      p.y += p.vy * spd;
+      const flicker = 0.7 + 0.3 * Math.sin(age * 0.4 + p.phase);
+      const effA = partAlpha * fade * flicker * (1.0 + beatBoost * 0.6);
+      const effR = p.r * (1.0 + beatBoost * 0.4);
+      const tailLen = p.extra ? 1.8 : 1.2;
+
+      vCtx.save();
+      vCtx.shadowBlur = 10;
+      vCtx.shadowColor = cfg.color_part;
+      vCtx.strokeStyle = cfg.color_part;
+      vCtx.lineWidth = Math.max(1, effR * 0.6);
+      vCtx.globalAlpha = Math.min(1.0, effA);
+      vCtx.beginPath();
+      vCtx.moveTo(p.x, p.y);
+      vCtx.lineTo(p.x - p.vx * tailLen * spd, p.y - p.vy * tailLen * spd);
+      vCtx.stroke();
+      vCtx.fillStyle = '#ffffff';
+      vCtx.beginPath();
+      vCtx.arc(p.x, p.y, Math.max(1, effR * 0.4), 0, Math.PI * 2);
+      vCtx.fill();
+      vCtx.restore();
+
+      if (p.x >= -40 && p.x <= cw + 40 && p.y >= -40 && p.y <= ch + 40) alive.push(p);
+
+    // ✨ GOLDEN DUST (AFRO)
+    } else if (p.type === 'golden_dust') {
+      p.y += p.vy * spd;
+      const sway = Math.sin(age * 0.035 + p.phase) * 1.5 + Math.cos(age * 0.08 + p.phase) * 0.7;
+      p.x += (p.vx || 0) * spd + sway * spd;
+      const twinkle = 0.5 + 0.5 * Math.sin(age * 0.09 + p.phase);
+      const effA = partAlpha * fade * twinkle * (1.0 + beatBoost * 0.5);
+      const effR = p.r * (1.0 + beatBoost * 0.3);
+
+      vCtx.save();
+      vCtx.shadowBlur = 12;
+      vCtx.shadowColor = cfg.color_part;
+      vCtx.fillStyle = cfg.color_part;
+      vCtx.globalAlpha = Math.min(1.0, effA * 0.85);
+      vCtx.beginPath();
+      vCtx.arc(p.x, p.y, Math.max(1, effR * 1.5), 0, Math.PI * 2);
+      vCtx.fill();
+      vCtx.fillStyle = '#ffffff';
+      vCtx.globalAlpha = Math.min(1.0, effA);
+      vCtx.beginPath();
+      vCtx.arc(p.x, p.y, Math.max(1, effR * 0.45), 0, Math.PI * 2);
+      vCtx.fill();
+      vCtx.restore();
+
+      if (p.y > -40 && p.x >= -30 && p.x <= cw + 30) alive.push(p);
+
+    // 🌟 EMBERS / FIREFLIES
+    } else if (p.type === 'embers') {
+      p.y += p.vy * spd;
+      p.x += (p.vx || 0) * spd + Math.sin(age * 0.045 + p.phase) * 1.4 * spd;
+      const twinkle = 0.45 + 0.55 * Math.sin(age * 0.12 + p.phase);
+      const effA = partAlpha * fade * twinkle * (1.0 + beatBoost);
+      const effR = p.r * (1.0 + beatBoost * 0.4);
+
+      vCtx.save();
+      vCtx.shadowBlur = 12;
+      vCtx.shadowColor = cfg.color_part;
+      vCtx.fillStyle = cfg.color_part;
+      vCtx.globalAlpha = Math.min(1.0, effA);
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, effR), 0, Math.PI * 2); vCtx.fill();
+      // white core
+      vCtx.fillStyle = '#ffffff';
+      vCtx.globalAlpha = Math.min(1.0, effA * 1.2);
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, effR * 0.42), 0, Math.PI * 2); vCtx.fill();
+      vCtx.restore();
+
+      if (p.y > -30 && p.x >= -20 && p.x <= cw + 20) alive.push(p);
+
+    // ✨ TWINKLE / STAR SPARKLE
+    } else if (p.type === 'twinkle') {
+      p.y += (p.vy || 0) * spd;
+      p.x += (p.vx || 0) * spd + Math.sin(age * 0.03 + p.phase) * 0.7;
+      const twinkle = Math.abs(Math.sin(age * 0.10 + p.phase));
+      const effA = partAlpha * fade * twinkle * (1.0 + beatBoost);
+      const effR = p.r * (1.0 + beatBoost * 0.5);
+
+      vCtx.save();
+      vCtx.shadowBlur = 10;
+      vCtx.shadowColor = cfg.color_part;
+      vCtx.strokeStyle = cfg.color_part;
+      vCtx.lineWidth = 1;
+      vCtx.globalAlpha = Math.min(1.0, effA);
+      const cr = effR * 1.8;
+      vCtx.beginPath(); vCtx.moveTo(p.x - cr, p.y); vCtx.lineTo(p.x + cr, p.y); vCtx.stroke();
+      vCtx.beginPath(); vCtx.moveTo(p.x, p.y - cr); vCtx.lineTo(p.x, p.y + cr); vCtx.stroke();
+      vCtx.fillStyle = '#ffffff';
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, effR * 0.35), 0, Math.PI * 2); vCtx.fill();
+      vCtx.restore();
+
+      if (p.x >= -20 && p.x <= cw + 20 && p.y >= -20 && p.y <= ch + 20) alive.push(p);
+
+    // 🔮 BOKEH
+    } else if (p.type === 'bokeh') {
+      p.y += p.vy * spd;
+      p.x += (p.vx || 0) * spd + Math.sin(age * 0.02 + p.phase) * 0.6;
+      const effA = partAlpha * fade * 0.40 * (1.0 + beatBoost * 0.3);
+
+      vCtx.save();
+      vCtx.shadowBlur = 16;
+      vCtx.shadowColor = cfg.color_part;
+      vCtx.fillStyle = cfg.color_part;
+      vCtx.globalAlpha = Math.min(1.0, effA);
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(2, p.r), 0, Math.PI * 2); vCtx.fill();
+      vCtx.restore();
+
+      if (p.y > -50 && p.x >= -30 && p.x <= cw + 30) alive.push(p);
+
+    // ❄️ SNOW
+    } else if (p.type === 'snow') {
+      p.y += p.vy * spd;
+      p.x += (p.vx || 0) * spd + Math.sin(age * 0.07 + p.phase) * 0.8;
+      vCtx.save();
+      vCtx.shadowBlur = 6;
+      vCtx.shadowColor = '#ffffff';
+      vCtx.fillStyle = '#ffffff';
+      vCtx.globalAlpha = partAlpha * fade * 0.85;
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.fill();
+      vCtx.restore();
+      if (p.y < ch + 20 && p.x >= -20 && p.x <= cw + 20) alive.push(p);
+
+    // ❅ PETALS
+    } else if (p.type === 'petals') {
+      p.y += p.vy * spd;
+      p.x += (p.vx || 0) * spd + Math.sin(age * 0.05 + p.phase) * 1.2;
+      p.rot = (p.rot || 0) + 0.06;
+      vCtx.save();
+      vCtx.fillStyle = cfg.color_part;
+      vCtx.globalAlpha = partAlpha * fade;
+      drawStarShape(vCtx, p.x, p.y, Math.max(1, p.r), p.rot);
+      vCtx.fill();
+      vCtx.restore();
+      if (p.y < ch + 20 && p.x >= -20 && p.x <= cw + 20) alive.push(p);
+
+    // 🌧️ RAIN
+    } else if (p.type === 'rain') {
+      p.y += p.vy * spd;
+      p.x += p.vx * spd;
+      vCtx.save();
+      vCtx.strokeStyle = cfg.color_part;
+      vCtx.lineWidth = 1;
+      vCtx.globalAlpha = partAlpha * fade * 0.75;
+      vCtx.beginPath(); vCtx.moveTo(p.x, p.y); vCtx.lineTo(p.x - p.vx * 1.5, p.y - p.vy * 0.8); vCtx.stroke();
+      vCtx.restore();
+      if (p.y < ch + 30) alive.push(p);
+
+    // 🫧 BUBBLES
+    } else if (p.type === 'bubbles') {
+      p.y += p.vy * spd;
+      p.x += (p.vx || 0) * spd + Math.sin(age * 0.06 + p.phase) * 0.6;
+      vCtx.save();
+      vCtx.strokeStyle = cfg.color_part;
+      vCtx.lineWidth = 1;
+      vCtx.globalAlpha = partAlpha * fade * 0.7;
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.stroke();
+      vCtx.fillStyle = '#ffffff';
+      vCtx.beginPath(); vCtx.arc(p.x - p.r * 0.3, p.y - p.r * 0.3, Math.max(1, p.r * 0.28), 0, Math.PI * 2); vCtx.fill();
+      vCtx.restore();
+      if (p.y > -20) alive.push(p);
+
+    // 🎆 FIREWORKS
+    } else if (p.type === 'fw') {
+      p.vy += 0.22 * spd;
+      p.x += p.vx * spd;
+      p.y += p.vy * spd;
+      vCtx.save();
+      vCtx.shadowBlur = 8;
+      vCtx.shadowColor = cfg.color_part;
+      vCtx.fillStyle = cfg.color_part;
+      vCtx.globalAlpha = partAlpha * fade;
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.fill();
+      vCtx.restore();
+      if (p.y < ch + 20 && p.r > 0) alive.push(p);
+
+    // ☄ TRAIL
     } else if (p.type === 'tr') {
-      p.r -= 0.03;
-      if (p.r > 0 && p.life > 0) {
-        vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2);
-        vCtx.fillStyle = cfg.color_top; vCtx.fill();
-        // trail
-        vCtx.beginPath(); vCtx.moveTo(p.x, p.y); vCtx.lineTo(p.x - p.vx * 3, p.y - p.vy * 3);
-        vCtx.strokeStyle = cfg.color_part; vCtx.lineWidth = 1; vCtx.stroke();
-        vCtx.fillStyle = cfg.color_part;
-        alive.push(p);
-      }
-    } else if (p.type === 'pt') {
-      p.x += Math.sin(p.y * 0.05) * 0.8; // goyang
-      p.rot += 0.08;
-      p.r -= 0.005;
-      if (p.r > 0 && p.life > 0 && p.y < ch + 20) {
-        drawStarShape(vCtx, p.x, p.y, Math.max(1, p.r), p.rot);
-        vCtx.fillStyle = cfg.color_part; vCtx.fill();
-        alive.push(p);
-      }
-	    } else if (p.type === 'sm') {
-	      // asap: membesar & memudar — soft cloud look
-	      p.r += (p.grow || 0.04) * spd;
-	      p.life--;
-	      if (p.r < cw * 0.15 && p.life > 0 && p.y > -20) {
-	        const fade = Math.max(0.1, p.life / 50);
-	        vCtx.save();
-	        vCtx.globalAlpha = fade * 0.4;
-	        const grad = vCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(1, p.r));
-	        grad.addColorStop(0, cfg.color_part);
-	        grad.addColorStop(0.4, cfg.color_part);
-	        grad.addColorStop(1, 'rgba(128,128,128,0)');
-	        vCtx.fillStyle = grad;
-	        vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.fill();
-	        vCtx.restore();
-	        alive.push(p);
-	      }
-    } else if (p.type === 'sn') {
-      // salju: goyang ringan
-      p.x += Math.sin(p.y * 0.08) * 0.5;
-      p.life--;
-      if (p.life > 0 && p.y < ch + 10) {
-        vCtx.fillStyle = cfg.color_part;
+      p.x += p.vx * spd; p.y += p.vy * spd;
+      vCtx.save();
+      vCtx.fillStyle = cfg.color_top;
+      vCtx.globalAlpha = partAlpha * fade;
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.fill();
+      vCtx.beginPath(); vCtx.moveTo(p.x, p.y); vCtx.lineTo(p.x - p.vx * 3, p.y - p.vy * 3);
+      vCtx.strokeStyle = cfg.color_part; vCtx.lineWidth = 1; vCtx.stroke();
+      vCtx.restore();
+      if (p.y < ch + 20) alive.push(p);
+
+    // 🌫️ SMOKE
+    } else if (p.type === 'sm') {
+      p.r += (p.grow || 0.04) * spd;
+      p.y += p.vy * spd;
+      p.x += p.vx * spd + Math.sin(age * 0.04) * 0.4;
+      if (p.r < cw * 0.15 && p.y > -20) {
+        vCtx.save();
+        vCtx.globalAlpha = partAlpha * fade * 0.35;
+        const grad = vCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(1, p.r));
+        grad.addColorStop(0, cfg.color_part);
+        grad.addColorStop(0.5, cfg.color_part);
+        grad.addColorStop(1, 'rgba(128,128,128,0)');
+        vCtx.fillStyle = grad;
         vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.fill();
+        vCtx.restore();
         alive.push(p);
       }
-    } else if (p.type === 'rn') {
-      // hujan: garis vertikal tipis
-      p.life--;
-      if (p.life > 0 && p.y < ch + 10) {
-        vCtx.strokeStyle = cfg.color_part;
-        vCtx.lineWidth = 1;
-        vCtx.beginPath(); vCtx.moveTo(p.x, p.y); vCtx.lineTo(p.x - p.vx, p.y - p.vy * 0.3); vCtx.stroke();
-        alive.push(p);
-      }
-    } else if (p.type === 'bb') {
-      // gelembung: naik + goyang
-      p.x += Math.sin(p.y * 0.06) * 0.6;
-      p.r -= 0.01;
-      p.life--;
-      if (p.r > 1 && p.life > 0 && p.y > -10) {
-        vCtx.strokeStyle = cfg.color_part;
-        vCtx.lineWidth = 1;
-        vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.stroke();
-        // highlight
-        const hl = Math.max(1, p.r * 0.3);
-        vCtx.fillStyle = '#ffffff';
-        vCtx.beginPath(); vCtx.arc(p.x - p.r * 0.3, p.y - p.r * 0.3, hl, 0, Math.PI * 2); vCtx.fill();
-        alive.push(p);
-      }
-    } else { // sparkle
-      p.r -= 0.1;
-      if (p.r > 0 && p.life > 0) {
-        vCtx.beginPath(); vCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2); vCtx.fill();
-        alive.push(p);
-      }
+
+    // ✦ SPARKLE
+    } else {
+      p.x += (p.vx || 0) * spd; p.y += (p.vy || 0) * spd;
+      const twinkle = 0.5 + 0.5 * Math.sin(age * 0.15 + (p.phase || 0));
+      vCtx.save();
+      vCtx.shadowBlur = 8;
+      vCtx.shadowColor = cfg.color_part;
+      vCtx.fillStyle = cfg.color_part;
+      vCtx.globalAlpha = partAlpha * fade * twinkle;
+      vCtx.beginPath(); vCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2); vCtx.fill();
+      vCtx.restore();
+      if (p.x >= -20 && p.x <= cw + 20 && p.y >= -20 && p.y <= ch + 20) alive.push(p);
     }
   }
+
   prev_particles = alive;
   vCtx.globalAlpha = 1;
-
-  // fallback: hanya untuk sparkle (jika user pilih particle lain, jangan tampilkan fallback)
-  if (prev_particles.length === 0 && (pType === 'sparkle' || pType === undefined)) {
-    vCtx.fillStyle = cfg.color_part;
-    for (let p = 0; p < Math.min(cfg.part_amount, 30); p++) {
-      vCtx.beginPath();
-      vCtx.arc((Math.sin(timeTick / 40 + p * 10) * cw / 2) + cw / 2, ch - ((timeTick * cfg.part_speed * (1 + p * 0.1)) % ch), 2, 0, Math.PI * 2);
-      vCtx.fill();
-    }
-  }
 }
 
 // ── helper: bintang 5-kelopak ──
@@ -3248,6 +3543,14 @@ function fetchServerTasks() {
   fetch('/api/get_schedule').then(r => r.json()).then(data => { serverData = data; renderTasks(); }).catch(() => {});
 }
 
+function formatElapsed(start_ts) {
+  if (!start_ts) return '';
+  const sec = Math.max(0, Math.floor(Date.now() / 1000 - start_ts));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m ${s < 10 ? '0' : ''}${s}s`;
+}
+
 function renderTasks() {
   const list = document.getElementById('taskList'); const hist = document.getElementById('historyTbl');
   const allActive = [...browserQueue, ...serverData.active];
@@ -3258,14 +3561,19 @@ function renderTasks() {
   if (!allActive.length) { list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--muted);font-family:var(--font-m);font-size:11px">Tidak ada task aktif.</div>`; } 
   else {
     list.innerHTML = [...browserQueue.map(t => `<div class="task-row"><div class="task-icon">📤</div><div class="task-info"><div class="task-name">${t.judul || 'Task'}</div><div class="task-meta">${t.jadwal || ''}</div></div><span class="pill p-yellow" style="flex-shrink:0">${t.status || 'Menunggu'}</span><button class="cancel-btn" onclick="cancelBrowserTask(${JSON.stringify(t.id)})">Batalkan</button></div>`),
-      ...serverData.active.map(t => `<div class="task-row"><div class="task-icon">⚙️</div><div class="task-info"><div class="task-name">${t.title || 'Task'}</div><div class="task-meta">${t.time || ''}</div></div><span class="pill p-cyan" style="flex-shrink:0;max-width:200px;white-space:normal;line-height:1.3">${t.status || '—'}</span><button class="stop-btn" onclick="stopTask(${Number(t.id)})">Stop</button></div>`)
+      ...serverData.active.map(t => {
+        const elap = t.start_ts ? ` • <span style="color:var(--accent);font-weight:700">⏱️ ${formatElapsed(t.start_ts)}</span>` : '';
+        const startTime = t.render_start ? `Mulai: ${t.render_start}` : (t.time || '');
+        return `<div class="task-row"><div class="task-icon">⚙️</div><div class="task-info"><div class="task-name">${t.title || 'Task'}</div><div class="task-meta">${startTime}${elap}</div></div><span class="pill p-cyan" style="flex-shrink:0;max-width:220px;white-space:normal;line-height:1.3">${t.status || '—'}</span><button class="stop-btn" onclick="stopTask(${Number(t.id)})">Stop</button></div>`;
+      })
     ].join('');
   }
-  if (!(serverData.history || []).length) { hist.innerHTML = `<tr><td colspan="3" style="text-align:center;padding:16px;color:var(--muted);font-family:var(--font-m);font-size:11px">Belum ada history.</td></tr>`; } 
+  if (!(serverData.history || []).length) { hist.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted);font-family:var(--font-m);font-size:11px">Belum ada history.</td></tr>`; } 
   else {
     hist.innerHTML = serverData.history.map(t => {
       const c = t.status.includes('❌') ? 'var(--accent2)' : 'var(--muted)';
-      return `<tr><td><span style="font-family:var(--font-m);font-size:10px;color:var(--muted)">#${t.id}</span></td><td style="font-weight:700">${t.title || '—'}</td><td style="color:${c};font-weight:600">${t.status}</td></tr>`;
+      const durBadge = t.duration && t.duration !== '—' ? `<span class="pill p-cyan" style="font-size:10px;font-weight:700">⏱️ ${t.duration}</span>` : `<span style="color:var(--muted);font-size:11px">—</span>`;
+      return `<tr><td><span style="font-family:var(--font-m);font-size:10px;color:var(--muted)">#${t.id}</span></td><td style="font-weight:700">${t.title || '—'}</td><td>${durBadge}</td><td style="color:${c};font-weight:600">${t.status}</td></tr>`;
     }).join('');
   }
   const bnBadge = document.getElementById('bn-badge');

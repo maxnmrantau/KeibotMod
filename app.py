@@ -1,4 +1,14 @@
 import os, time, queue, threading, subprocess, random, json, shutil, math
+import sys
+
+# Ensure UTF-8 encoding on console output for Windows
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 import numpy as np
 import cv2, librosa, imageio
 import datetime as dt
@@ -141,6 +151,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
+from googleapiclient.discovery import build
 
 # ==========================================
 # 🛡️ SETUP & MONITORING
@@ -247,6 +258,7 @@ def logout():
     session.pop('logged_in', None); return redirect(url_for('login'))
 
 BASE_UPLOAD = os.path.join(BASE_DIR, "uploads")
+OUTPUT_DIR = os.path.join(BASE_DIR, "keibot-output") if os.name == 'nt' else '/root/keibot-output'
 DB_FILE = os.path.join(BASE_DIR, 'channels_db.json')
 TASKS_FILE = os.path.join(BASE_DIR, 'tasks_db.json')
 PRESETS_FILE = os.path.join(BASE_DIR, 'presets.json')
@@ -254,6 +266,7 @@ CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, 'client_secret.json')
 SCOPES = ['https://www.googleapis.com/auth/youtube', 'https://www.googleapis.com/auth/youtube.upload']
 
 os.makedirs(BASE_UPLOAD, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(os.path.join(BASE_DIR, 'static'), exist_ok=True)
 
 db_lock = threading.Lock()
@@ -338,9 +351,17 @@ def wait_for_resources(task_id, max_ram_pct=85.0):
 
 def move_to_history(task_id, final_status):
     global active_tasks, history_tasks
+    now = time.time()
     with db_lock:
         for t in active_tasks:
             if t['id'] == task_id:
+                start_ts = t.get('start_ts')
+                if start_ts:
+                    el = max(0, int(now - start_ts))
+                    t['duration'] = f"{el // 60}m {el % 60}s" if el >= 60 else f"{el}s"
+                else:
+                    t['duration'] = "—"
+                t['finish_time'] = dt.datetime.now().strftime('%H:%M:%S')
                 t['status'] = final_status
                 history_tasks.insert(0, t)
                 active_tasks.remove(t)
@@ -446,7 +467,7 @@ def get_smart_preset(audio_path):
             # slow / chill
             preset = {
                 "effect_type": random.choice(["waveform", "mirror", "smooth_blob", "sinusoidal"]),
-                "particle_type": random.choice(["petals", "smoke", "snow", "sparkle"]),
+                "particle_type": random.choice(["golden_dust", "embers", "twinkle", "petals", "smoke", "snow"]),
                 "bar_style": "center",
                 "reactivity": round(random.uniform(0.4, 0.7), 2),
                 "gravity": round(random.uniform(0.04, 0.10), 2),
@@ -455,7 +476,7 @@ def get_smart_preset(audio_path):
             # medium
             preset = {
                 "effect_type": random.choice(["spectrum", "circular", "dots_pixel", "filled_wave"]),
-                "particle_type": random.choice(["sparkle", "trail", "bubbles", "petals"]),
+                "particle_type": random.choice(["golden_dust", "embers", "sparkle", "bokeh", "bubbles"]),
                 "bar_style": "bottom",
                 "reactivity": round(random.uniform(0.6, 0.9), 2),
                 "gravity": round(random.uniform(0.06, 0.14), 2),
@@ -465,7 +486,7 @@ def get_smart_preset(audio_path):
             energy_boost = min(1.0, energy * 1.3)
             preset = {
                 "effect_type": random.choice(["sunburst", "neon_glow", "halftone", "pixel"]),
-                "particle_type": random.choice(["fireworks", "trail", "rain", "sparkle"]),
+                "particle_type": random.choice(["drift_sparks", "fireworks", "trail", "twinkle", "sparkle"]),
                 "bar_style": "bottom",
                 "reactivity": round(random.uniform(0.8, 1.5), 2),
                 "gravity": round(random.uniform(0.10, 0.20), 2),
@@ -520,6 +541,25 @@ class AudioBrain:
     def __init__(self):
         self.y = None; self.sr = None; self.onset_env = None; self.has_audio = False
         self.duration = 0.0
+        self.n_fft = 2048
+        self.window = np.hanning(self.n_fft).astype(np.float32)
+        self.cached_bars = -1
+        self.tilt = None
+        self.bin_edges = None
+        self.kernel = np.array([0.15, 0.7, 0.15], dtype=np.float32)
+        self.wave_mod = None
+        self.phase_pattern = None
+
+    def _ensure_bars(self, n_bars):
+        if self.cached_bars == n_bars and self.tilt is not None:
+            return
+        self.cached_bars = n_bars
+        sr_ref = self.sr if self.sr else 22050
+        self.tilt = (1.0 + 3.2 * (np.linspace(0, 1, n_bars) ** 0.85)).astype(np.float32)
+        f_edges = 35.0 + (3800.0 - 35.0) * (np.linspace(0, 1, n_bars + 1) ** 1.6)
+        self.bin_edges = np.clip(np.round(f_edges * self.n_fft / sr_ref).astype(int), 3, self.n_fft // 2)
+        self.wave_mod = (0.80 + 0.20 * np.sin(np.linspace(0, 4.0 * np.pi, n_bars))).astype(np.float32)
+        self.phase_pattern = np.linspace(0, 4.0 * np.pi, n_bars).astype(np.float32)
 
     def load(self, path, max_duration=None):
         try:
@@ -527,82 +567,137 @@ class AudioBrain:
             self.onset_env = librosa.onset.onset_strength(y=self.y, sr=self.sr)
             self.duration = len(self.y) / self.sr
             self.has_audio = True
+            self._ensure_bars(64)
         except Exception as e:
             print(f"Audio Error: {e}")
 
     def get_data(self, t, n_bars=64): 
-        if not self.has_audio: return 0.0, False, np.zeros(n_bars)
+        if not self.has_audio: return 0.0, False, np.zeros(n_bars, dtype=np.float32)
+        self._ensure_bars(n_bars)
         idx = int(t * self.sr)
-        if idx >= len(self.y): return 0.0, False, np.zeros(n_bars)
+        if idx >= len(self.y): return 0.0, False, np.zeros(n_bars, dtype=np.float32)
 
-        try: chunk = self.y[idx:idx+1024]; vol = np.sqrt(np.mean(chunk**2)) * 10 if len(chunk)>0 else 0
-        except: vol = 0
+        try:
+            chunk = self.y[idx:idx+1024]
+            vol = float(np.sqrt(np.mean(chunk**2)) * 10) if len(chunk) > 0 else 0.0
+        except:
+            vol = 0.0
         
         hit = False
         try:
-            if int(idx/512) < len(self.onset_env) and self.onset_env[int(idx/512)] > 2.0: 
+            onset_idx = int(idx / 512)
+            if onset_idx < len(self.onset_env) and self.onset_env[onset_idx] > 2.0: 
                 hit = True
-        except: pass
+        except:
+            pass
 
-        final_bars = np.zeros(n_bars)
+        final_bars = np.full(n_bars, 0.12, dtype=np.float32)
         try:
-            n_fft = 2048; fft_data = self.y[idx:idx+n_fft]
-            if len(fft_data) == n_fft:
-                windowed_data = fft_data * np.hanning(n_fft)
+            fft_data = self.y[idx:idx+self.n_fft]
+            if len(fft_data) == self.n_fft:
+                # 1. FFT dengan pre-cached Hanning window
+                windowed_data = fft_data * self.window
                 spec = np.abs(np.fft.rfft(windowed_data))
-                usable = spec[2:200] 
-                ls = len(usable)
-                
-                if ls > 0:
-                    half_n = n_bars // 2
-                    raw_bars = np.zeros(half_n)
-                    for i in range(half_n):
-                        s = int((i / half_n) * ls)
-                        e = int(((i + 1) / half_n) * ls)
-                        if e <= s: e = s + 1
-                        if e > ls: e = ls
-                        raw_bars[i] = np.mean(usable[s:e]) / 15.0 if e > s else 0
-                    
-                    smooth_half = np.convolve(raw_bars, np.ones(3)/3, mode='same')
-                    final_bars = np.concatenate((smooth_half[::-1], smooth_half))
-                    
-                    if len(final_bars) < n_bars: final_bars = np.append(final_bars, 0)
-                    elif len(final_bars) > n_bars: final_bars = final_bars[:n_bars]
-        except: pass
-                
+
+                # 2. Ambil energi per band frekuensi musikal (~35 Hz s/d ~3800 Hz)
+                raw_bars = np.zeros(n_bars, dtype=np.float32)
+                spec_len = len(spec)
+                for i in range(n_bars):
+                    s = int(self.bin_edges[i])
+                    e = int(max(s + 1, self.bin_edges[i + 1]))
+                    if e > spec_len: e = spec_len
+                    if e > s:
+                        # Logarithmic decibel compression dengan treble tilt boost
+                        mag = float(np.mean(spec[s:e])) * self.tilt[i]
+                        raw_bars[i] = float(np.log1p(mag * 0.18))
+                    else:
+                        raw_bars[i] = 0.0
+
+                # 3. Spatial smoothing antar bar tetangga
+                smooth_bars = np.convolve(raw_bars, self.kernel, mode='same')
+
+                # 4. Modulasi multi-peak wave (meniru wave preview yang berombak indah)
+                modulated = smooth_bars * self.wave_mod
+
+                # 5. Lantai aktif ritmis dinamis (mencegah sudut kanan kosong / 0)
+                vol_factor = min(1.0, max(0.35, vol * 0.45))
+                floor_pattern = (0.15 + 0.08 * np.sin(t * 3.2 + self.phase_pattern)) * vol_factor
+                active_bars = np.maximum(modulated, floor_pattern.astype(np.float32))
+
+                # 6. HEADROOM NORMALIZATION (Anti-Ceiling / Anti-Rata):
+                # Memastikan puncak tertinggi tidak pernah mentok ke atap (maksimal ~0.65 - 0.68)
+                # sehingga selalu ada ruang bebas di atas bar persis seperti di preview!
+                peak = float(np.max(active_bars))
+                if peak > 0.68:
+                    scaled_bars = active_bars * (0.68 / peak)
+                else:
+                    scaled_bars = active_bars
+
+                final_bars = np.maximum(0.12, scaled_bars)
+        except Exception:
+            pass
+
         return vol, hit, final_bars
 
 class BackgroundManager:
     def __init__(self, bg_paths, w, h):
-        self.bg_paths = bg_paths; self.w = w; self.h = h; self.idx = 0; self.reader = None; self.static_bg = None; self.load_current()
+        self.bg_paths = bg_paths; self.w = w; self.h = h; self.idx = 0
+        self.cap = None; self.static_bg = None; self.load_current()
         
     def load_current(self):
         try:
-            if self.reader: self.reader.close()
-            self.reader = None
+            if self.cap is not None:
+                self.cap.release()
+                self.cap = None
+            if not self.bg_paths:
+                self.static_bg = np.zeros((self.h, self.w, 3), dtype=np.uint8)
+                return
             path = self.bg_paths[self.idx]
+            if not os.path.exists(path):
+                self.static_bg = np.zeros((self.h, self.w, 3), dtype=np.uint8)
+                return
             if path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')): 
                 img = cv2.imread(path)
                 if img is not None:
-                    self.static_bg = cv2.resize(img, (self.w, self.h))
+                    interp = cv2.INTER_AREA if (img.shape[1] > self.w or img.shape[0] > self.h) else cv2.INTER_LINEAR
+                    self.static_bg = cv2.resize(img, (self.w, self.h), interpolation=interp)
                 else:
                     self.static_bg = np.zeros((self.h, self.w, 3), dtype=np.uint8)
             else: 
-                self.reader = imageio.get_reader(path, 'ffmpeg')
+                # ⚡ Gunakan OpenCV native VideoCapture (3x-5x lebih cepat dari imageio)
+                self.cap = cv2.VideoCapture(path)
+                self.static_bg = None
         except Exception as e:
             print(f"[BackgroundManager] Gagal load {path}: {e}")
             self.static_bg = np.zeros((self.h, self.w, 3), dtype=np.uint8)
             
     def get_frame(self):
-        if self.static_bg is not None: return self.static_bg.copy()
-        try: return cv2.resize(cv2.cvtColor(self.reader.get_next_data(), cv2.COLOR_RGB2BGR), (self.w, self.h))
-        except: self.idx = (self.idx + 1) % len(self.bg_paths); self.load_current(); return self.get_frame()
+        if self.static_bg is not None:
+            return self.static_bg.copy()
+        if self.cap is not None and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if not ret or frame is None:
+                # Loop video dari awal atau ganti ke background berikutnya
+                if len(self.bg_paths) > 1:
+                    self.idx = (self.idx + 1) % len(self.bg_paths)
+                    self.load_current()
+                    return self.get_frame()
+                else:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.cap.read()
+            if ret and frame is not None:
+                if frame.shape[1] != self.w or frame.shape[0] != self.h:
+                    frame = cv2.resize(frame, (self.w, self.h))
+                return frame
+        return np.zeros((self.h, self.w, 3), dtype=np.uint8)
         
     def close(self):
-        try:
-            if self.reader: self.reader.close()
-        except:
-            pass
+        if self.cap is not None:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
 
 class VisualEngine:
     def __init__(self, c_bot, c_top, c_part):
@@ -610,12 +705,40 @@ class VisualEngine:
         self.col_top = (c_top[2], c_top[1], c_top[0])
         self.col_part = (c_part[2], c_part[1], c_part[0])
         self.bar_h = None
+        self.zoom = 1.0
+        self.flash = 0.0
 
         self.grad = np.zeros((1000, 1, 3), dtype=np.uint8)
         for c in range(3):
             self.grad[:, 0, c] = np.linspace(self.col_top[c], self.col_bot[c], 1000)
 
         self.particles = []
+        self._glow_sprites = {}
+        for sz in (6, 10, 16, 24, 36, 48):
+            r = sz // 2
+            y, x = np.ogrid[-r:r, -r:r]
+            dist = np.sqrt(x * x + y * y)
+            alpha = np.clip(1.0 - (dist / max(1, r)) ** 1.3, 0.0, 1.0).astype(np.float32)
+            self._glow_sprites[sz] = alpha[:, :, np.newaxis]
+
+    def _draw_glow(self, frame, cx, cy, radius, color_bgr, alpha=1.0):
+        h, w = frame.shape[:2]
+        sizes = (6, 10, 16, 24, 36, 48)
+        target_sz = max(6, min(48, int(radius * 2)))
+        chosen_sz = min(sizes, key=lambda s: abs(s - target_sz))
+        sprite = self._glow_sprites[chosen_sz]
+        r = chosen_sz // 2
+        cx, cy = int(cx), int(cy)
+        x1 = max(0, cx - r); x2 = min(w, cx + r)
+        y1 = max(0, cy - r); y2 = min(h, cy + r)
+        if x2 <= x1 or y2 <= y1: return
+        sx1 = x1 - (cx - r); sx2 = sx1 + (x2 - x1)
+        sy1 = y1 - (cy - r); sy2 = sy1 + (y2 - y1)
+        sub_sprite = sprite[sy1:sy2, sx1:sx2]
+        eff_alpha = max(0.0, min(1.0, float(alpha)))
+        tint = (sub_sprite * np.array(color_bgr, dtype=np.float32) * eff_alpha).astype(np.uint8)
+        roi = frame[y1:y2, x1:x2]
+        cv2.add(roi, tint, dst=roi)
 
     # ── helper ──
     @staticmethod
@@ -649,11 +772,29 @@ class VisualEngine:
         p_spd  = self._sn(cfg.get('part_speed'), 1.0)
         smooth = self._sn(cfg.get('smoothing'), 0.90)
 
-        # smooth bar heights
+        # smooth bar heights: fast attack (responsif beat) & smooth liquid decay (mengalir halus)
         for i in range(n):
             target = bars[i] * react
-            self.bar_h[i] = (self.bar_h[i] * smooth) + (target * (1 - smooth))
-            self.bar_h[i] = max(0, self.bar_h[i])
+            if target > self.bar_h[i]:
+                self.bar_h[i] = self.bar_h[i] * 0.35 + target * 0.65
+            else:
+                decay = max(0.85, min(0.95, smooth))
+                self.bar_h[i] = self.bar_h[i] * decay + target * (1.0 - decay)
+            self.bar_h[i] = max(0.0, self.bar_h[i])
+
+        # ── Jedag-Jedug (Screen Zoom Bounce) ──
+        jj_mode = str(cfg.get('jj_mode', 'off')).lower()
+        if jj_mode not in ('off', 'none') and is_hit and vol > 1.2:
+            target_zoom = 1.055 if jj_mode == 'hard' else 1.028
+            if target_zoom > self.zoom:
+                self.zoom = target_zoom
+        self.zoom = self.zoom * 0.72 + 1.0 * 0.28
+
+        # ── Efek Lampu Flash (Strobe / Glow) ──
+        flash_mode = str(cfg.get('flash_mode', 'off')).lower()
+        if flash_mode not in ('off', 'none') and is_hit and vol > 1.2:
+            self.flash = max(self.flash, min(0.38, vol * 0.08))
+        self.flash = self.flash * 0.65
 
         # beat pulse (additive, bisa aktif bersama efek lain)
         if cfg.get('use_beat_pulse', False):
@@ -661,7 +802,9 @@ class VisualEngine:
 
         # dispatch ke efek utama
         effect = cfg.get('effect_type', 'spectrum')
-        if effect == 'circular':
+        if effect in ('none', 'off', 'disabled'):
+            pass  # Efek visualizer dinonaktifkan
+        elif effect == 'circular':
             self._draw_circular(frame, n, idle, space, px, py, wp, max_h, w, h)
         elif effect == 'waveform':
             self._draw_waveform(frame, n, idle, space, px, py, wp, max_h, w, h)
@@ -689,10 +832,29 @@ class VisualEngine:
             bar_style = cfg.get('bar_style', 'bottom')
             self._draw_spectrum(frame, n, idle, space, px, py, wp, max_h, w, h, bar_style)
 
-        # sparkle / particles
-        if p_amt > 0:
-            p_type = cfg.get('particle_type', 'sparkle')
+        # sparkle / particles (bisa dinonaktifkan)
+        p_type = cfg.get('particle_type', 'sparkle')
+        if p_amt > 0 and p_type not in ('none', 'off', 'disabled'):
             self._draw_particles(frame, vol, is_hit, p_amt, p_spd, w, h, p_type, cfg)
+
+        # ── Terapkan Efek Jedag-Jedug (Zoom Layar) ──
+        if self.zoom > 1.004 and jj_mode not in ('off', 'none'):
+            pad_x = int(w * (self.zoom - 1.0) / 2)
+            pad_y = int(h * (self.zoom - 1.0) / 2)
+            if pad_x > 0 and pad_y > 0 and (w - 2 * pad_x) > 0 and (h - 2 * pad_y) > 0:
+                crop = frame[pad_y:h-pad_y, pad_x:w-pad_x]
+                frame = cv2.resize(crop, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        # ── Terapkan Efek Lampu (Flash / Strobe) ──
+        if self.flash > 0.02 and flash_mode not in ('off', 'none'):
+            if flash_mode == 'neon':
+                add_b = int(self.col_top[0] * self.flash)
+                add_g = int(self.col_top[1] * self.flash)
+                add_r = int(self.col_top[2] * self.flash)
+                frame = cv2.add(frame, (add_b, add_g, add_r, 0))
+            else:  # 'white' / strobe
+                add_val = int(255 * self.flash)
+                frame = cv2.add(frame, (add_val, add_val, add_val, 0))
 
         return frame
 
@@ -721,6 +883,8 @@ class VisualEngine:
             if ws > 0 and hs > 0:
                 bg = cv2.resize(self.grad, (bar_w, height))
                 frame[y1s:y2s, x1s:x2s] = bg[y1s-y1:y1s-y1+hs, x1s-x1:x1s-x1+ws]
+                if bar_w >= 3 and y1s < h:
+                    cv2.line(frame, (x1s, y1s), (x2s - 1, y1s), self.col_top, 1, cv2.LINE_AA)
 
     # ═══════════════════════════════════════════════════════════
     #  CIRCULAR SPECTRUM  (bar radial membentuk lingkaran)
@@ -1088,166 +1252,341 @@ class VisualEngine:
             cv2.addWeighted(overlay, intensity, frame, 1.0 - intensity, 0, frame)
 
     # ═══════════════════════════════════════════════════════════
-    #  SPARKLE / PARTICLES  (multi-tipe)
+    #  SPARKLE / PARTICLES (Modern Soft Glow & Organic Physics)
     # ═══════════════════════════════════════════════════════════
-    def _draw_particles(self, frame, vol, is_hit, p_amt, p_spd, w, h, p_type='sparkle', cfg=None):
-        # particle settings
-        sz_mult = {'small': 0.6, 'large': 1.5}.get(cfg.get('part_size', 'medium') if cfg else 'medium', 1.0)
-        life_mult = {'short': 0.5, 'long': 1.8}.get(cfg.get('part_life', 'medium') if cfg else 'medium', 1.0)
-        dens_mult = {'low': 0.5, 'high': 1.8}.get(cfg.get('part_density', 'medium') if cfg else 'medium', 1.0)
-        part_alpha = max(0.0, min(1.0, float(cfg.get('part_opacity', 1.0)) if cfg else 1.0))
+    def _draw_particles(self, frame, vol, is_hit, p_amt, p_spd, w, h, p_type='embers', cfg=None):
+        cfg = cfg or {}
+        p_type = str(p_type).lower().strip()
+        if p_type in ('none', 'off', 'disabled') or p_amt <= 0:
+            self.particles = []
+            return
 
-        # 🐛 FIX: part_alpha sebelumnya dihitung tapi tidak pernah dipakai, sehingga
-        # pengaturan "Opacity Partikel" diabaikan saat render (preview & render beda).
-        # Kita modulasi warna partikel dengan part_alpha sebagai aproximasi globalAlpha.
-        def pcol(base):
-            if part_alpha >= 0.999:
-                return base
-            return (int(base[0] * part_alpha), int(base[1] * part_alpha), int(base[2] * part_alpha))
+        # Handle reset jika data partikel lama masih berbentuk list
+        if self.particles and isinstance(self.particles[0], list):
+            self.particles = []
 
-        # spawn particles
-        if is_hit and vol > 1.5:
-            for _ in range(max(1, min(int(p_amt * dens_mult), 15))):
+        sz_mult = {'small': 0.65, 'large': 1.6}.get(cfg.get('part_size', 'medium'), 1.0)
+        life_mult = {'short': 0.6, 'long': 1.8}.get(cfg.get('part_life', 'medium'), 1.0)
+        dens_mult = {'low': 0.5, 'high': 1.8}.get(cfg.get('part_density', 'medium'), 1.0)
+        part_alpha = max(0.0, min(1.0, float(cfg.get('part_opacity', 1.0))))
+
+        spd = max(0.25, (1.0 + (vol * 0.12)) * p_spd)
+        beat_boost = 0.40 if (is_hit and vol > 1.2) else 0.0
+
+        def pcol(base, a=1.0):
+            factor = max(0.0, min(1.0, part_alpha * a))
+            return (int(base[0] * factor), int(base[1] * factor), int(base[2] * factor))
+
+        # ── 1. AMBIENT POPULATION (Layar selalu hidup & estetik, tidak pernah kosong) ──
+        target_ambient = max(12, min(95, int((p_amt + 3) * 7 * dens_mult)))
+        while len(self.particles) < target_ambient:
+            init_y = random.uniform(0, h) if len(self.particles) < (target_ambient // 2) else random.uniform(h * 0.7, h + 20)
+            if p_type in ('embers', 'fireflies'):
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': init_y,
+                    'vx': random.uniform(-0.3, 0.3), 'vy': -random.uniform(0.7, 1.8),
+                    'r': random.uniform(3.5, 7.5) * sz_mult,
+                    'life': int(random.uniform(90, 180) * life_mult), 'max_life': 180,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'embers', 'extra': 0.0
+                })
+            elif p_type == 'twinkle':
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': random.uniform(0, h),
+                    'vx': random.uniform(-0.4, 0.4), 'vy': random.uniform(-0.4, 0.4),
+                    'r': random.uniform(3.0, 6.5) * sz_mult,
+                    'life': int(random.uniform(60, 140) * life_mult), 'max_life': 140,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'twinkle', 'extra': 0.0
+                })
+            elif p_type == 'bokeh':
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': init_y,
+                    'vx': random.uniform(-0.2, 0.2), 'vy': -random.uniform(0.3, 0.8),
+                    'r': random.uniform(14.0, 32.0) * sz_mult,
+                    'life': int(random.uniform(120, 220) * life_mult), 'max_life': 220,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'bokeh', 'extra': 0.0
+                })
+            elif p_type == 'snow':
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': random.uniform(-20, h),
+                    'vx': random.uniform(-0.5, 0.5), 'vy': random.uniform(0.6, 1.6),
+                    'r': random.uniform(2.0, 4.5) * sz_mult,
+                    'life': int(random.uniform(100, 200) * life_mult), 'max_life': 200,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'snow', 'extra': 0.0
+                })
+            elif p_type == 'petals':
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': random.uniform(-20, h),
+                    'vx': random.uniform(-0.8, 0.8), 'vy': random.uniform(0.8, 2.0),
+                    'r': random.uniform(4.0, 8.0) * sz_mult,
+                    'life': int(random.uniform(100, 200) * life_mult), 'max_life': 200,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'petals', 'extra': random.uniform(0, math.pi)
+                })
+            elif p_type == 'bubbles':
+                self.particles.append({
+                    'x': random.uniform(w * 0.05, w * 0.95), 'y': init_y,
+                    'vx': random.uniform(-0.4, 0.4), 'vy': -random.uniform(0.7, 1.8),
+                    'r': random.uniform(4.0, 10.0) * sz_mult,
+                    'life': int(random.uniform(80, 160) * life_mult), 'max_life': 160,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'bubbles', 'extra': 0.0
+                })
+            elif p_type == 'rain':
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': random.uniform(-30, h),
+                    'vx': random.uniform(-1.2, -0.4), 'vy': random.uniform(7.0, 12.0),
+                    'r': random.uniform(1.0, 2.5) * sz_mult,
+                    'life': int(random.uniform(40, 80) * life_mult), 'max_life': 80,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'rain', 'extra': 0.0
+                })
+            elif p_type in ('drift_sparks', 'phonk', 'sparks'):
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': random.uniform(h * 0.25, h + 20),
+                    'vx': random.choice([-1.0, 1.0]) * random.uniform(2.5, 6.5),
+                    'vy': -random.uniform(1.2, 4.5),
+                    'r': random.uniform(2.0, 4.5) * sz_mult,
+                    'life': int(random.uniform(25, 55) * life_mult), 'max_life': 55,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'drift_sparks', 'extra': 0.0
+                })
+            elif p_type in ('golden_dust', 'afro', 'gold_dust'):
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': init_y,
+                    'vx': random.uniform(-0.35, 0.35), 'vy': -random.uniform(0.4, 1.1),
+                    'r': random.uniform(2.5, 5.5) * sz_mult,
+                    'life': int(random.uniform(110, 210) * life_mult), 'max_life': 210,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'golden_dust', 'extra': 0.0
+                })
+            else:  # sparkle default
+                self.particles.append({
+                    'x': random.uniform(0, w), 'y': random.uniform(0, h),
+                    'vx': random.uniform(-1.5, 1.5), 'vy': random.uniform(-1.5, 1.5),
+                    'r': random.uniform(2.5, 6.0) * sz_mult,
+                    'life': int(random.uniform(40, 90) * life_mult), 'max_life': 90,
+                    'phase': random.uniform(0, math.pi * 2), 'type': 'sparkle', 'extra': 0.0
+                })
+
+        # ── 2. AUDIO REACTIVE BURST (Meletup dinamis saat beat keras) ──
+        if is_hit and vol > 1.3:
+            burst_count = max(2, min(8, int(p_amt * dens_mult * 0.6)))
+            for _ in range(burst_count):
                 if p_type == 'fireworks':
-                    self.particles.append([
-                        np.random.randint(w*0.3, w*0.7), np.random.randint(h*0.6, h*0.9),
-                        np.random.uniform(-6, 6), np.random.uniform(-8, -2),
-	                        int((np.random.randint(2, 5)) * sz_mult), int((30 + random.random() * 30) * life_mult), 0, 'fw'
-                    ])
+                    self.particles.append({
+                        'x': random.uniform(w * 0.35, w * 0.65), 'y': random.uniform(h * 0.6, h * 0.85),
+                        'vx': random.uniform(-5.5, 5.5), 'vy': random.uniform(-7.5, -2.5),
+                        'r': random.uniform(3.0, 6.0) * sz_mult,
+                        'life': int(random.uniform(40, 75) * life_mult), 'max_life': 75,
+                        'phase': random.uniform(0, math.pi * 2), 'type': 'fireworks', 'extra': 0.0
+                    })
                 elif p_type == 'trail':
-                    self.particles.append([
-                        np.random.randint(0, w), np.random.randint(0, h//2),
-                        np.random.uniform(-4, 4), np.random.uniform(2, 6),
-                        np.random.randint(2, 4), np.random.randint(40, 70), 0, 'tr'
-                    ])
-                elif p_type == 'petals':
-                    self.particles.append([
-                        np.random.randint(0, w), -10,
-                        np.random.uniform(-1, 1), np.random.uniform(0.5, 2),
-                        np.random.randint(3, 6), np.random.randint(80, 120), np.random.uniform(0, math.pi), 'pt'
-                    ])
+                    self.particles.append({
+                        'x': random.uniform(0, w), 'y': random.uniform(0, h * 0.5),
+                        'vx': random.uniform(-3.5, 3.5), 'vy': random.uniform(3.0, 6.5),
+                        'r': random.uniform(3.0, 5.0) * sz_mult,
+                        'life': int(random.uniform(40, 70) * life_mult), 'max_life': 70,
+                        'phase': random.uniform(0, math.pi * 2), 'type': 'trail', 'extra': 0.0
+                    })
                 elif p_type == 'smoke':
-                    # asap: dari dasar, naik perlahan, membesar, memudar
-                    self.particles.append([
-                        np.random.randint(w*0.1, w*0.9), np.random.randint(h*0.7, h),
-                        np.random.uniform(-0.5, 0.5), np.random.uniform(-1.5, -0.3),
-                        2, np.random.randint(40, 80), np.random.uniform(0.02, 0.08), 'sm'
-                    ])
-                elif p_type == 'snow':
-                    # salju: dari atas, turun perlahan, goyang
-                    self.particles.append([
-                        np.random.randint(0, w), -10,
-                        np.random.uniform(-0.8, 0.8), np.random.uniform(0.3, 1.2),
-                        np.random.randint(1, 3), int((h + 20) / (0.3 + random.uniform(0.3, 1.2))) + 30, 0, 'sn'
-                    ])
-                elif p_type == 'rain':
-                    # hujan: garis tipis dari atas, cepat, miring sedikit
-                    self.particles.append([
-                        np.random.randint(0, w), -20,
-                        np.random.uniform(-1.5, -0.3), np.random.uniform(5, 9),
-                        np.random.randint(1, 2), int((h + 40) / (5 + random.uniform(0, 4))) + 15, 0, 'rn'
-                    ])
-                elif p_type == 'bubbles':
-                    # gelembung: dari dasar, naik, goyang, border transparan
-                    self.particles.append([
-                        np.random.randint(w*0.1, w*0.9), np.random.randint(h*0.8, h),
-                        np.random.uniform(-0.6, 0.6), np.random.uniform(-1.8, -0.5),
-                        np.random.randint(3, 8), np.random.randint(60, 120), 0, 'bb'
-                    ])
-                else:  # sparkle (default)
-                    self.particles.append([
-                        np.random.randint(0, w), np.random.randint(0, h),
-                        np.random.uniform(-3, 3), np.random.uniform(-3, 3),
-                        np.random.randint(2, 6), 0, 0, 'sp'
-                    ])
+                    self.particles.append({
+                        'x': random.uniform(w * 0.15, w * 0.85), 'y': random.uniform(h * 0.7, h),
+                        'vx': random.uniform(-0.5, 0.5), 'vy': random.uniform(-1.6, -0.4),
+                        'r': random.uniform(3.0, 6.0) * sz_mult,
+                        'life': int(random.uniform(50, 90) * life_mult), 'max_life': 90,
+                        'phase': random.uniform(0, math.pi * 2), 'type': 'smoke', 'extra': random.uniform(0.04, 0.09)
+                    })
+                elif p_type in ('drift_sparks', 'phonk', 'sparks'):
+                    burst_x = random.uniform(w * 0.2, w * 0.8)
+                    burst_y = random.uniform(h * 0.55, h * 0.88)
+                    angle = random.uniform(-math.pi * 0.88, -math.pi * 0.12)
+                    speed = random.uniform(6.0, 15.0)
+                    self.particles.append({
+                        'x': burst_x, 'y': burst_y,
+                        'vx': math.cos(angle) * speed, 'vy': math.sin(angle) * speed,
+                        'r': random.uniform(2.5, 5.0) * sz_mult,
+                        'life': int(random.uniform(20, 45) * life_mult), 'max_life': 45,
+                        'phase': random.uniform(0, math.pi * 2), 'type': 'drift_sparks', 'extra': 1.0
+                    })
+                elif p_type in ('golden_dust', 'afro', 'gold_dust'):
+                    self.particles.append({
+                        'x': random.uniform(w * 0.1, w * 0.9), 'y': random.uniform(h * 0.65, h * 0.95),
+                        'vx': random.uniform(-0.8, 0.8), 'vy': -random.uniform(1.0, 2.5),
+                        'r': random.uniform(3.0, 6.0) * sz_mult,
+                        'life': int(random.uniform(80, 150) * life_mult), 'max_life': 150,
+                        'phase': random.uniform(0, math.pi * 2), 'type': 'golden_dust', 'extra': 0.5
+                    })
+                else:
+                    self.particles.append({
+                        'x': random.uniform(w * 0.2, w * 0.8), 'y': random.uniform(h * 0.5, h * 0.85),
+                        'vx': random.uniform(-2.5, 2.5), 'vy': -random.uniform(1.5, 3.5),
+                        'r': random.uniform(3.5, 7.5) * sz_mult,
+                        'life': int(random.uniform(50, 100) * life_mult), 'max_life': 100,
+                        'phase': random.uniform(0, math.pi * 2), 'type': p_type, 'extra': 0.0
+                    })
 
+        # ── 3. UPDATE FISIKA & DRAWING SOFT GLOW ──
         alive = []
-        spd = 1.0 + (vol * 0.1 * p_spd)
         for p in self.particles:
-            x, y, vx, vy = p[0], p[1], p[2], p[3]
-            radius = p[4]
-            life = p[5] if len(p) > 5 else 0
-            extra = p[6] if len(p) > 6 else 0
-            ptype = p[7] if len(p) > 7 else 'sp'
+            p['life'] -= 1
+            if p['life'] <= 0:
+                continue
 
-            x += vx * spd; y += vy * spd
+            age = p['max_life'] - p['life']
+            fade = min(1.0, min(age / 18.0, p['life'] / 22.0))
+            ptype = p.get('type', 'embers')
 
-            if ptype == 'fw':
-                vy += 0.25 * spd
-                radius -= 0.05
-                life -= 1
-                if radius > 0 and life > 0 and y < h + 20:
-                    cv2.circle(frame, (int(x), int(y)), max(1, int(radius)), pcol(self.col_part), -1)
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
-            elif ptype == 'tr':
-                radius -= 0.03
-                life -= 1
-                if radius > 0 and life > 0:
-                    cv2.circle(frame, (int(x), int(y)), max(1, int(radius)), pcol(self.col_top), -1)
-                    cv2.line(frame, (int(x), int(y)), (int(x - vx*2), int(y - vy*2)), pcol(self.col_part), 1, cv2.LINE_AA)
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
-            elif ptype == 'pt':
-                x += math.sin(y * 0.05) * 0.8
-                radius -= 0.005
-                life -= 1
-                extra += 0.08
-                if radius > 0 and life > 0 and y < h + 20:
-                    self._draw_star(frame, int(x), int(y), max(1, int(radius)), extra, pcol(self.col_part))
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
-            elif ptype == 'sm':
-                # smoke: membesar & memudar — tampilan asap lembut
-                radius += extra * spd
-                life -= 1
-                if radius < 100 and life > 0 and y > -20:
-                    fade = max(0.1, life / 60)
-                    # buat overlay kecil untuk smoke (agar bisa di-blur)
-                    r_int = max(2, int(radius))
-                    d = r_int * 2 + 6
-                    x1 = max(0, min(w - d, int(x) - r_int - 3))
-                    y1 = max(0, min(h - d, int(y) - r_int - 3))
-                    smoke_patch = np.zeros((d, d, 3), dtype=np.uint8)
-                    cx_sm, cy_sm = r_int + 3, r_int + 3
-                    intensity = int(180 * fade * part_alpha)
-                    cv2.circle(smoke_patch, (cx_sm, cy_sm), r_int, (intensity, intensity, intensity), -1)
-                    # blur untuk efek soft
-                    smoke_patch = cv2.GaussianBlur(smoke_patch, (0, 0), max(2, r_int // 3))
-                    # blend ke frame
-                    roi_sm = frame[y1:y1+d, x1:x1+d]
-                    cv2.addWeighted(smoke_patch, 0.5 * fade, roi_sm, 1.0 - 0.5 * fade, 0, roi_sm)
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
-            elif ptype == 'sn':
-                # snow: goyang ringan
-                x += math.sin(y * 0.08) * 0.5
-                life -= 1
-                if life > 0 and y < h + 10:
-                    cv2.circle(frame, (int(x), int(y)), max(1, int(radius)), pcol(self.col_part), -1)
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
-            elif ptype == 'rn':
-                # rain: garis vertikal tipis
-                life -= 1
-                if life > 0 and y < h + 10:
-                    cv2.line(frame, (int(x), int(y)), (int(x - vx), int(y - vy*0.3)), pcol(self.col_part), 1, cv2.LINE_AA)
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
-            elif ptype == 'bb':
-                # bubbles: naik + goyang, border putih dengan fill transparan
-                x += math.sin(y * 0.06) * 0.6
-                radius -= 0.01
-                life -= 1
-                if radius > 1 and life > 0 and y > -10:
-                    # fill transparent (mix with bg - we use thin outline instead)
-                    cv2.circle(frame, (int(x), int(y)), max(1, int(radius)), pcol(self.col_part), 1, cv2.LINE_AA)
-                    cv2.circle(frame, (int(x), int(y)), max(1, int(radius)-1), pcol(self.col_part), -1)
-                    # highlight spot di pojok
-                    hs = max(1, int(radius * 0.3))
-                    cv2.circle(frame, (int(x) - int(radius*0.3), int(y) - int(radius*0.3)), hs,
-                               pcol((255, 255, 255)), -1)
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
+            # ⚡ DRIFT SPARKS (PHONK): Percikan tajam cepat, velocity stretch line, meletup keras
+            if ptype == 'drift_sparks':
+                p['vx'] *= 0.97
+                p['vy'] += 0.08 * spd
+                p['x'] += p['vx'] * spd
+                p['y'] += p['vy'] * spd
+                flicker = 0.7 + 0.3 * math.sin(age * 0.4 + p['phase'])
+                eff_a = part_alpha * fade * flicker * (1.0 + beat_boost * 0.6)
+                eff_r = p['r'] * (1.0 + beat_boost * 0.4)
+                sx, sy = int(p['x']), int(p['y'])
+                tail_len = 1.8 if p.get('extra', 0) > 0 else 1.2
+                ex = int(sx - p['vx'] * tail_len * spd)
+                ey = int(sy - p['vy'] * tail_len * spd)
+                self._draw_glow(frame, sx, sy, eff_r * 2.0, self.col_part, eff_a * 0.8)
+                if 0 <= sx < w and 0 <= sy < h and 0 <= ex < w and 0 <= ey < h:
+                    cv2.line(frame, (sx, sy), (ex, ey), pcol(self.col_part, eff_a), max(1, int(eff_r * 0.6)), cv2.LINE_AA)
+                    cv2.circle(frame, (sx, sy), max(1, int(eff_r * 0.4)), (255, 255, 255), -1)
+                if -40 <= p['x'] <= w + 40 and -40 <= p['y'] <= h + 40:
+                    alive.append(p)
+
+            # ✨ GOLDEN DUST (AFRO): Butiran debu hangat berayun harmonis (dual sine) & pendaran lembut
+            elif ptype == 'golden_dust':
+                p['y'] += p['vy'] * spd
+                sway = math.sin(age * 0.035 + p['phase']) * 1.5 + math.cos(age * 0.08 + p['phase']) * 0.7
+                p['x'] += p['vx'] * spd + sway * spd
+                twinkle = 0.5 + 0.5 * math.sin(age * 0.09 + p['phase'])
+                eff_a = part_alpha * fade * twinkle * (1.0 + beat_boost * 0.5)
+                eff_r = p['r'] * (1.0 + beat_boost * 0.3)
+                self._draw_glow(frame, p['x'], p['y'], eff_r * 2.4, self.col_part, eff_a * 0.85)
+                core_r = max(1, int(eff_r * 0.45))
+                cv2.circle(frame, (int(p['x']), int(p['y'])), core_r, (255, 255, 255), -1)
+                if p['y'] > -40 and -30 <= p['x'] <= w + 30:
+                    alive.append(p)
+
+            # 🌟 EMBERS / FIREFLIES: Melayang naik, berayun lembut gelombang sinus, soft glow + core
+            elif ptype == 'embers':
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd + math.sin(age * 0.045 + p['phase']) * 1.5 * spd
+                twinkle = 0.45 + 0.55 * math.sin(age * 0.12 + p['phase'])
+                eff_a = part_alpha * fade * twinkle * (1.0 + beat_boost)
+                eff_r = p['r'] * (1.0 + beat_boost * 0.4)
+                self._draw_glow(frame, p['x'], p['y'], eff_r * 2.2, self.col_part, eff_a * 0.8)
+                core_r = max(1, int(eff_r * 0.4))
+                cv2.circle(frame, (int(p['x']), int(p['y'])), core_r, (255, 255, 255), -1)
+                if p['y'] > -40 and -20 <= p['x'] <= w + 20:
+                    alive.append(p)
+
+            # ✨ TWINKLE: Bintang berkilau 4-sudut diamond cross + soft glow
+            elif ptype == 'twinkle':
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd + math.sin(age * 0.03 + p['phase']) * 0.8
+                twinkle = abs(math.sin(age * 0.10 + p['phase']))
+                eff_a = part_alpha * fade * twinkle * (1.0 + beat_boost)
+                eff_r = p['r'] * (1.0 + beat_boost * 0.5)
+                self._draw_glow(frame, p['x'], p['y'], eff_r * 2.0, self.col_part, eff_a * 0.7)
+                cx, cy = int(p['x']), int(p['y'])
+                cr = int(eff_r * 1.8)
+                if cr > 2 and 0 <= cx < w and 0 <= cy < h:
+                    cv2.line(frame, (cx - cr, cy), (cx + cr, cy), pcol(self.col_part, eff_a), 1, cv2.LINE_AA)
+                    cv2.line(frame, (cx, cy - cr), (cx, cy + cr), pcol(self.col_part, eff_a), 1, cv2.LINE_AA)
+                    cv2.circle(frame, (cx, cy), max(1, int(eff_r * 0.35)), (255, 255, 255), -1)
+                if -20 <= p['x'] <= w + 20 and -20 <= p['y'] <= h + 20:
+                    alive.append(p)
+
+            # 🔮 BOKEH: Bulatan cahaya besar transparan & melayang lambat (kedalaman sinematik)
+            elif ptype == 'bokeh':
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd + math.sin(age * 0.02 + p['phase']) * 0.6
+                eff_a = part_alpha * fade * 0.45 * (1.0 + beat_boost * 0.3)
+                self._draw_glow(frame, p['x'], p['y'], p['r'] * 1.8, self.col_part, eff_a)
+                if p['y'] > -60 and -40 <= p['x'] <= w + 40:
+                    alive.append(p)
+
+            # ❄️ SNOW: Melayang turun perlahan dengan goyangan angin halus & pendaran lembut
+            elif ptype == 'snow':
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd + math.sin(age * 0.07 + p['phase']) * 0.9
+                eff_a = part_alpha * fade * 0.85
+                self._draw_glow(frame, p['x'], p['y'], p['r'] * 1.8, (255, 255, 255), eff_a * 0.5)
+                cv2.circle(frame, (int(p['x']), int(p['y'])), max(1, int(p['r'] * 0.7)), (255, 255, 255), -1)
+                if p['y'] < h + 20 and -20 <= p['x'] <= w + 20:
+                    alive.append(p)
+
+            # ❅ PETALS: Kelopak bunga/bintang melayang anggun dengan rotasi
+            elif ptype == 'petals':
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd + math.sin(age * 0.05 + p['phase']) * 1.3
+                p['extra'] += 0.06
+                eff_a = part_alpha * fade
+                self._draw_star(frame, int(p['x']), int(p['y']), max(1, int(p['r'])), p['extra'], pcol(self.col_part, eff_a))
+                if p['y'] < h + 30 and -30 <= p['x'] <= w + 30:
+                    alive.append(p)
+
+            # 🌧️ RAIN: Rintik hujan garis tipis miring & cepat
+            elif ptype == 'rain':
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd
+                rx, ry = int(p['x']), int(p['y'])
+                cv2.line(frame, (rx, ry), (int(rx - p['vx'] * 1.8), int(ry - p['vy'] * 1.2)), pcol(self.col_part, fade * 0.8), 1, cv2.LINE_AA)
+                if p['y'] < h + 30 and -30 <= p['x'] <= w + 30:
+                    alive.append(p)
+
+            # 🫧 BUBBLES: Gelembung transparan naik & bergoyang dengan pantulan cahaya
+            elif ptype == 'bubbles':
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd + math.sin(age * 0.06 + p['phase']) * 0.7
+                bx, by, br = int(p['x']), int(p['y']), max(2, int(p['r']))
+                cv2.circle(frame, (bx, by), br, pcol(self.col_part, fade * 0.7), 1, cv2.LINE_AA)
+                hs = max(1, int(br * 0.3))
+                cv2.circle(frame, (bx - int(br * 0.3), by - int(br * 0.3)), hs, (255, 255, 255), -1)
+                if p['y'] > -40 and -20 <= p['x'] <= w + 20:
+                    alive.append(p)
+
+            # 🎆 FIREWORKS: Letupan radial melengkung dengan gravitasi
+            elif ptype == 'fireworks':
+                p['vy'] += 0.22 * spd
+                p['x'] += p['vx'] * spd
+                p['y'] += p['vy'] * spd
+                eff_a = part_alpha * fade
+                self._draw_glow(frame, p['x'], p['y'], p['r'] * 1.6, self.col_part, eff_a * 0.7)
+                cv2.circle(frame, (int(p['x']), int(p['y'])), max(1, int(p['r'] * 0.5)), (255, 255, 255), -1)
+                if p['y'] < h + 30 and -30 <= p['x'] <= w + 30:
+                    alive.append(p)
+
+            # ☄ TRAIL: Komet meluncur dengan ekor cahaya
+            elif ptype == 'trail':
+                p['x'] += p['vx'] * spd
+                p['y'] += p['vy'] * spd
+                tx, ty = int(p['x']), int(p['y'])
+                cv2.line(frame, (tx, ty), (int(tx - p['vx'] * 3.5), int(ty - p['vy'] * 3.5)), pcol(self.col_part, fade * 0.6), 1, cv2.LINE_AA)
+                self._draw_glow(frame, tx, ty, p['r'] * 1.8, self.col_top, part_alpha * fade * 0.8)
+                cv2.circle(frame, (tx, ty), max(1, int(p['r'] * 0.4)), (255, 255, 255), -1)
+                if p['y'] < h + 40 and -40 <= p['x'] <= w + 40:
+                    alive.append(p)
+
+            # 🌫️ SMOKE: Gumpalan asap halus mengembang
+            elif ptype == 'smoke':
+                p['r'] += (p.get('extra', 0.05)) * spd * 0.5
+                p['y'] += p['vy'] * spd
+                p['x'] += p['vx'] * spd + math.sin(age * 0.04 + p['phase']) * 0.4
+                eff_a = part_alpha * fade * 0.35
+                self._draw_glow(frame, p['x'], p['y'], p['r'] * 2.0, (200, 200, 200), eff_a)
+                if p['y'] > -50 and p['r'] < 90:
+                    alive.append(p)
+
+            # ✦ SPARKLE: Partikel berkilau klasik dengan soft glow
             else:
-                # sparkle default
-                radius -= 0.1
-                if radius > 0:
-                    cv2.circle(frame, (int(x), int(y)), int(radius), pcol(self.col_part), -1)
-                    alive.append([x, y, vx, vy, radius, life, extra, ptype])
+                p['x'] += p['vx'] * spd
+                p['y'] += p['vy'] * spd
+                twinkle = 0.5 + 0.5 * math.sin(age * 0.15 + p['phase'])
+                eff_a = part_alpha * fade * twinkle
+                self._draw_glow(frame, p['x'], p['y'], p['r'] * 1.8, self.col_part, eff_a * 0.8)
+                cv2.circle(frame, (int(p['x']), int(p['y'])), max(1, int(p['r'] * 0.35)), (255, 255, 255), -1)
+                if -20 <= p['x'] <= w + 20 and -20 <= p['y'] <= h + 20:
+                    alive.append(p)
+
         self.particles = alive
 
     # ── helper: gambar bintang 5-kelopak untuk petals ──
@@ -1287,13 +1626,17 @@ def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg)
             if d['id'] == task_id: d['status'] = "Rendering Visual & Background... ⚡"
     save_tasks_db()
 
+    render_preset = str(cfg.get('render_speed', 'ultrafast')).lower()
+    if render_preset not in ('ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'):
+        render_preset = 'ultrafast'
+
     cmd = [
-        get_ffmpeg_path(), '-y', '-threads', '2', 
+        get_ffmpeg_path(), '-y', '-threads', '0', 
         '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', f'{w}x{h}', '-pix_fmt', 'bgr24', '-r', str(fps), 
         '-i', '-', 
         '-i', audio_path, 
         '-t', str(duration),
-        '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p', output_path
+        '-c:v', 'libx264', '-preset', render_preset, '-crf', '22', '-pix_fmt', 'yuv420p', output_path
     ]
     
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1628,9 +1971,14 @@ def background_worker():
             if not wait_for_resources(task_id): 
                 raise Exception("Dibatalkan")
                 
+            task_start_ts = time.time()
+            now_str = dt.datetime.now().strftime('%H:%M:%S')
             with db_lock:
                 for d in active_tasks:
-                    if d['id'] == task_id: d['status'] = "Meracik Aset Gallery... ⚙️"
+                    if d['id'] == task_id:
+                        d['status'] = "Meracik Aset Gallery... ⚙️"
+                        d['start_ts'] = task_start_ts
+                        d['render_start'] = now_str
             save_tasks_db()
 
             audio_paths = get_all_audios(yt_id)
@@ -1694,17 +2042,19 @@ def background_worker():
             if not isinstance(preset, dict):
                 preset = {"color_bot": "#00d4ff", "color_top": "#7c5cfc", "color_part": "#ffffff", "pos_x": 50, "pos_y": 85, "width_pct": 60, "max_height": 40, "idle_height": 5, "bar_count": 64, "reactivity": 0.66, "spacing": 3, "part_amount": 3, "part_speed": 1.0, "effect_type": "spectrum", "use_beat_pulse": False, "particle_type": "sparkle", "fade_duration": 0, "use_watermark": False, "wm_text": "", "wm_color": "#ffffff", "wm_font": "M", "wm_size": 24, "wm_position": "bl", "wm_move": "none", "use_tracklist": False, "tl_font": "M", "tl_size": "medium", "tl_position": "tr", "tl_bg": "dark", "tl_title": "PLAYLIST", "tl_color": "#ffffff", "tl_active": "none", "use_timestamp": False, "ts_pos": "bl", "ts_font": "M", "ts_size": 20, "ts_color": "#ffffff", "ts_offx": 50, "ts_offy": 90}
 
+            user_cfg = task.get('vis_config') if isinstance(task.get('vis_config'), dict) else {}
             preset['yt_id'] = yt_id
             preset['use_floating_card'] = task.get('use_floating_card', False)
             preset['use_tracklist'] = task.get('use_tracklist', preset.get('use_tracklist', False))
             preset['use_watermark'] = task.get('use_watermark', preset.get('use_watermark', False))
             preset['use_timestamp'] = task.get('use_timestamp', preset.get('use_timestamp', False))
+            preset['jj_mode'] = task.get('jj_mode', user_cfg.get('jj_mode', preset.get('jj_mode', 'off')))
+            preset['flash_mode'] = task.get('flash_mode', user_cfg.get('flash_mode', preset.get('flash_mode', 'off')))
 
             # 🐛 FIX: di mode Random/Smart, preset dibangun ulang sehingga styling
             # tracklist/watermark/timestamp & pengaturan partikel yang dipilih user HILANG.
             # Karena itu kita selalu mengirim `vis_config` penuh dari frontend dan di sini
             # kita merge field styling-nya kembali ke preset agar hasil render sesuai preview.
-            user_cfg = task.get('vis_config') if isinstance(task.get('vis_config'), dict) else {}
             if vis_mode in ('random', 'smart'):
                 # 🐛 FIX: di mode Random/Smart, preset dibangun ulang sehingga SEMUA
                 # pengaturan spectrum user (tinggi/posisi/lebar/jumlah bar/warna/dll)
@@ -1728,13 +2078,22 @@ def background_worker():
                     'ts_offx', 'ts_offy',
                     # ── partikel lanjutan ──
                     'particle_type', 'part_size', 'part_life', 'part_opacity',
-                    'part_density', 'fade_duration'):
+                    'part_density', 'fade_duration', 'jj_mode', 'flash_mode'):
                     if k in user_cfg:
                         preset[k] = user_cfg[k]
-            preset['track_schedule'] = track_schedule
+            # ⏱️ TARGET DURATION & RENDER TIME OPTIMIZATION
+            target_hours = float(task.get('target_duration_hours', 1))
+            target_sec = target_hours * 3600
+
+            # 🚀 OPTIMASI KRITIS: Jika target durasi lebih pendek dari gabungan MP3,
+            # hanya render durasi yang dibutuhkan (jangan render 20 menit MP3 jika video hanya 6 menit!)
+            render_duration = min(base_duration_sec, target_sec) if target_sec > 0 else base_duration_sec
+
+            # Filter tracklist schedule agar hanya memuat track yang masuk dalam durasi render
+            preset['track_schedule'] = [tr for tr in track_schedule if tr['start'] < render_duration]
             preset['channel_name'] = ch_name
-            # resolusi render (dari task, bukan dari vis_config)
             preset['resolution'] = task.get('resolution', '720')
+            preset['render_speed'] = task.get('render_speed', 'ultrafast')
 
             base_video = os.path.join(BASE_UPLOAD, f"temp_v_{task_id}.mp4")
             final_video = os.path.join(BASE_DIR, f"static/final_{task_id}.mp4")
@@ -1742,10 +2101,10 @@ def background_worker():
             if stop_flags.get(task_id): raise Exception("Dibatalkan")
             with db_lock:
                 for d in active_tasks:
-                    if d['id'] == task_id: d['status'] = "Rendering Base FFmpeg... ⚡"
+                    if d['id'] == task_id: d['status'] = f"Rendering Visual ({int(render_duration//60)}m {int(render_duration%60)}s)... ⚡"
             save_tasks_db()
 
-            render_video_core(task_id, base_audio, bg_paths, base_video, base_duration_sec, preset)
+            render_video_core(task_id, base_audio, bg_paths, base_video, render_duration, preset)
             if stop_flags.get(task_id): raise Exception("Dibatalkan")
 
             # ── SMART CUT: potong & acak ulang chunk video ──
@@ -1755,14 +2114,14 @@ def background_worker():
             cut_use_remainder = task.get('cut_use_remainder', True)
             use_transition = task.get('use_transition', False)
             trans_dur = min(2.0, max(0.1, float(task.get('transition_duration', 0.5))))
-            if smart_cut and cut_duration > 0 and base_duration_sec > cut_duration:
+            if smart_cut and cut_duration > 0 and render_duration > cut_duration:
                 with db_lock:
                     for d in active_tasks:
                         if d['id'] == task_id: d['status'] = f"Smart Cut {cut_duration}s... ✂️"
                 save_tasks_db()
 
-                full_chunks = int(base_duration_sec // cut_duration)
-                remainder = base_duration_sec - (full_chunks * cut_duration)
+                full_chunks = int(render_duration // cut_duration)
+                remainder = render_duration - (full_chunks * cut_duration)
 
                 # segmentasi menggunakan FFmpeg
                 seg_dir = os.path.join(BASE_UPLOAD, f"seg_{task_id}")
@@ -1861,7 +2220,7 @@ def background_worker():
                         ], check=True, capture_output=True)
 
                         total_dur = sum(chunk_durs) - trans_dur * (len(chunks) - 1)
-                        base_duration_sec = total_dur
+                        render_duration = total_dur
                     else:
                         # concat cepat tanpa transisi (copy stream)
                         smart_txt = os.path.join(BASE_UPLOAD, f"smart_{task_id}.txt")
@@ -1869,10 +2228,10 @@ def background_worker():
                             for ch in chunks:
                                 f.write(f"file '{os.path.abspath(ch).replace(chr(92), '/')}'\n")
                         subprocess.run([
-                            get_ffmpeg_path(), '-y', '-threads', '2', '-f', 'concat', '-safe', '0',
+                            get_ffmpeg_path(), '-y', '-threads', '0', '-f', 'concat', '-safe', '0',
                             '-i', smart_txt, '-c', 'copy', smart_video
                         ], check=True, capture_output=True)
-                        base_duration_sec = full_chunks * cut_duration + (remainder if (cut_use_remainder and remainder > 0.5) else 0)
+                        render_duration = full_chunks * cut_duration + (remainder if (cut_use_remainder and remainder > 0.5) else 0)
 
                     # ganti base_video dengan hasil smart cut
                     shutil.move(smart_video, base_video)
@@ -1880,10 +2239,7 @@ def background_worker():
                 # cleanup segment files
                 shutil.rmtree(seg_dir, ignore_errors=True)
 
-            target_hours = float(task.get('target_duration_hours', 1))
-            target_sec = target_hours * 3600
-            
-            loop_count = math.ceil(target_sec / base_duration_sec)
+            loop_count = math.ceil(target_sec / render_duration) if render_duration > 0 else 1
 
             if loop_count > 1:
                 with db_lock:
@@ -1899,7 +2255,7 @@ def background_worker():
 
                 if stop_flags.get(task_id): raise Exception("Dibatalkan")
                 subprocess.run([
-                    get_ffmpeg_path(), '-y', '-threads', '2', '-f', 'concat', '-safe', '0', '-i', loop_txt, 
+                    get_ffmpeg_path(), '-y', '-threads', '0', '-f', 'concat', '-safe', '0', '-i', loop_txt, 
                     '-c', 'copy', '-t', str(target_sec), final_video
                 ], check=True)
             else:
@@ -1911,8 +2267,10 @@ def background_worker():
             dest = task.get('output_dest', 'youtube')
 
             if dest == 'vps':
-                # Simpan di VPS — langsung selesai
-                vps_folder = str(task.get('vps_folder', '/root/keibot-output'))
+                # Simpan di VPS / Lokal — langsung selesai
+                vps_folder = str(task.get('vps_folder', OUTPUT_DIR))
+                if os.name == 'nt' and (vps_folder.startswith('/root') or not os.path.isabs(vps_folder)):
+                    vps_folder = OUTPUT_DIR
                 try:
                     os.makedirs(vps_folder, exist_ok=True)
                     dest_path = os.path.join(vps_folder, f"{task.get('title', 'video')}_{task_id}.mp4")
@@ -1923,7 +2281,7 @@ def background_worker():
                     for d in active_tasks:
                         if d['id'] == task_id: d['status'] = "Render Selesai ✅"
                 save_tasks_db()
-                dl_link = f"/download_vps/{os.path.basename(dest_path)}" if not dest_path.startswith("/root/") else dest_path
+                dl_link = f"/download_vps/{os.path.basename(dest_path)}"
                 move_to_history(task_id, f"Render Selesai ✅ <a href='{dl_link}' target='_blank'>[Download Video]</a>")
                 return  # stop di sini, jangan lanjut upload YouTube
             elif channel_data:
@@ -2443,7 +2801,30 @@ def device_login():
             <div id="status" style="margin-top:30px; font-weight:bold;">⏳ Menunggu Anda memasukkan kode...</div>
         </div>
         <script>
-            function poll() {{ fetch('/api/poll_device_token', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{device_code: '{res['device_code']}'}}) }}).then(r => r.json()).then(data => {{ if(data.status === 'success') {{ document.getElementById('status').innerHTML = "🎉 Berhasil! Mengalihkan..."; setTimeout(() => {{ window.location.href = '/'; }}, 2000); }} else if(data.status === 'pending') {{ setTimeout(poll, data.interval || 5000); }} }}); }}
+            function poll() {{
+                fetch('/api/poll_device_token', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{device_code: '{res['device_code']}'}})
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if(data.status === 'success') {{
+                        document.getElementById('status').innerHTML = "🎉 Berhasil! Mengalihkan...";
+                        document.getElementById('status').style.color = "#10b981";
+                        setTimeout(() => {{ window.location.href = '/'; }}, 2000);
+                    }} else if(data.status === 'pending') {{
+                        setTimeout(poll, data.interval || 5000);
+                    }} else {{
+                        document.getElementById('status').innerHTML = "❌ Gagal: " + (data.error || "Terjadi kesalahan saat menghubungkan channel.");
+                        document.getElementById('status').style.color = "#ef4444";
+                    }}
+                }})
+                .catch(err => {{
+                    document.getElementById('status').innerHTML = "❌ Error respon server: " + err;
+                    document.getElementById('status').style.color = "#ef4444";
+                }});
+            }}
             setTimeout(poll, 5000);
         </script>
     </body></html>
@@ -2452,31 +2833,38 @@ def device_login():
 
 @app.route('/api/poll_device_token', methods=['POST'])
 def poll_device_token():
-    device_code = request.json.get('device_code')
-    with open(CLIENT_SECRETS_FILE, 'r') as f:
-        s_data = json.load(f); conf = s_data.get('installed', s_data.get('web', {})); c_id = conf.get('client_id'); c_sec = conf.get('client_secret')
-    res = requests.post('https://oauth2.googleapis.com/token', data={'client_id': c_id, 'client_secret': c_sec, 'device_code': device_code, 'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'}).json()
-    if 'error' in res:
-        err = res['error']
-        if err == 'authorization_pending': return jsonify({"status": "pending", "interval": 5000})
-        elif err == 'slow_down': return jsonify({"status": "pending", "interval": 10000})
-        else: return jsonify({"status": "error", "error": err})
-    creds = Credentials(token=res['access_token'], refresh_token=res.get('refresh_token'), token_uri='https://oauth2.googleapis.com/token', client_id=c_id, client_secret=c_sec, scopes=SCOPES)
-    youtube = build('youtube', 'v3', credentials=creds); chan_res = youtube.channels().list(part="snippet", mine=True).execute()
-    if chan_res['items']:
-        item = chan_res['items'][0]; global database_channel
-        c_idx = next((i for i, c in enumerate(database_channel) if c['yt_id'] == item['id']), None)
-        if c_idx is None:
-            new_c = {"id": len(database_channel)+1, "name": item['snippet']['title'], "yt_id": item['id'], "thumbnail": item['snippet']['thumbnails']['default']['url'], "status": "Connected 🟢 (1 Key)", "creds_list": [creds.to_json()]}
-            database_channel.append(new_c)
+    try:
+        device_code = request.json.get('device_code')
+        with open(CLIENT_SECRETS_FILE, 'r') as f:
+            s_data = json.load(f); conf = s_data.get('installed', s_data.get('web', {})); c_id = conf.get('client_id'); c_sec = conf.get('client_secret')
+        res = requests.post('https://oauth2.googleapis.com/token', data={'client_id': c_id, 'client_secret': c_sec, 'device_code': device_code, 'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'}).json()
+        if 'error' in res:
+            err = res['error']
+            if err == 'authorization_pending': return jsonify({"status": "pending", "interval": 5000})
+            elif err == 'slow_down': return jsonify({"status": "pending", "interval": 10000})
+            else: return jsonify({"status": "error", "error": err})
+        creds = Credentials(token=res['access_token'], refresh_token=res.get('refresh_token'), token_uri='https://oauth2.googleapis.com/token', client_id=c_id, client_secret=c_sec, scopes=SCOPES)
+        youtube = build('youtube', 'v3', credentials=creds)
+        chan_res = youtube.channels().list(part="snippet", mine=True).execute()
+        if chan_res.get('items'):
+            item = chan_res['items'][0]; global database_channel
+            c_idx = next((i for i, c in enumerate(database_channel) if c['yt_id'] == item['id']), None)
+            if c_idx is None:
+                new_c = {"id": len(database_channel)+1, "name": item['snippet']['title'], "yt_id": item['id'], "thumbnail": item['snippet']['thumbnails']['default']['url'], "status": "Connected 🟢 (1 Key)", "creds_list": [creds.to_json()]}
+                database_channel.append(new_c)
+            else:
+                if 'creds_list' not in database_channel[c_idx]:
+                    database_channel[c_idx]['creds_list'] = [database_channel[c_idx].get('creds_json', '')]
+                if creds.to_json() not in database_channel[c_idx]['creds_list']:
+                    database_channel[c_idx]['creds_list'].append(creds.to_json())
+                database_channel[c_idx]['status'] = f"Connected 🟢 ({len(database_channel[c_idx]['creds_list'])} Keys)"
+            save_channels(database_channel)
+            return jsonify({"status": "success"})
         else:
-            if 'creds_list' not in database_channel[c_idx]:
-                database_channel[c_idx]['creds_list'] = [database_channel[c_idx].get('creds_json', '')]
-            if creds.to_json() not in database_channel[c_idx]['creds_list']:
-                database_channel[c_idx]['creds_list'].append(creds.to_json())
-            database_channel[c_idx]['status'] = f"Connected 🟢 ({len(database_channel[c_idx]['creds_list'])} Keys)"
-        save_channels(database_channel)
-    return jsonify({"status": "success"})
+            return jsonify({"status": "error", "error": "Akun Google ini belum memiliki Channel YouTube. Silakan buat channel terlebih dahulu di youtube.com!"})
+    except Exception as e:
+        print(f"❌ Error poll_device_token: {e}")
+        return jsonify({"status": "error", "error": str(e)})
 
 # --- BATCH CREATOR ---
 @app.route('/api/batch_create', methods=['POST'])
@@ -2524,9 +2912,9 @@ def batch_create():
             "cut_use_remainder": data.get('cut_use_remainder', True),
             "use_transition": data.get('use_transition', False),
             "transition_duration": data.get('transition_duration', 0.5),
-            "resolution": str(data.get('resolution', '720')),
+            "render_speed": str(data.get('render_speed', 'ultrafast')),
             "output_dest": data.get('output_dest', 'youtube'),
-            "vps_folder": data.get('vps_folder', '/root/keibot-output')
+            "vps_folder": data.get('vps_folder', OUTPUT_DIR)
         }
         with db_lock:
             active_tasks.append({"id": t_id, "title": blueprint['title'], "time": blueprint['publish_date'], "status": "In Factory Queue ⚙️", "type": "📺 VOD"})
@@ -2546,12 +2934,12 @@ def serve_uploads(filename):
 
 @app.route('/download_vps/<path:filename>')
 def serve_vps_download(filename):
-    return send_from_directory('/root/keibot-output', filename)
+    return send_from_directory(OUTPUT_DIR, filename)
 
 @app.route('/api/get_output_videos')
 def get_output_videos():
     # baca folder dari file konfigurasi atau default
-    folder = '/root/keibot-output'
+    folder = OUTPUT_DIR
     if not os.path.exists(folder): return jsonify([])
     files = []
     for f in sorted(os.listdir(folder), reverse=True):
@@ -2565,7 +2953,7 @@ def get_output_videos():
 def delete_output_video():
     name = request.json.get('name')
     if not name: return jsonify({"status": "error", "error": "Nama file diperlukan"})
-    fp = os.path.join('/root/keibot-output', name)
+    fp = os.path.join(OUTPUT_DIR, name)
     if os.path.exists(fp):
         os.remove(fp)
         return jsonify({"status": "success"})
