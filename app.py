@@ -1,4 +1,4 @@
-import os, time, queue, threading, subprocess, random, json, shutil, math
+import os, time, queue, threading, subprocess, random, json, shutil, math, gc
 import sys
 
 # Ensure UTF-8 encoding on console output for Windows
@@ -363,11 +363,39 @@ def move_to_history(task_id, final_status):
                     t['duration'] = "—"
                 t['finish_time'] = dt.datetime.now().strftime('%H:%M:%S')
                 t['status'] = final_status
+                t.pop('blueprint', None)
                 history_tasks.insert(0, t)
                 active_tasks.remove(t)
                 if len(history_tasks) > 50: history_tasks.pop()
                 break
     save_tasks_db()
+
+def restore_and_resume_queue():
+    """Memulihkan antrean yang belum selesai jika server restart/reboot/crash"""
+    global active_tasks, history_tasks
+    resumed = 0
+    with db_lock:
+        for t in active_tasks:
+            bp = t.get('blueprint')
+            if bp:
+                # Jika server restart saat task sedang dalam proses render/upload, kembalikan ke antrean
+                st = t.get('status', '')
+                if st != "In Factory Queue ⚙️":
+                    t['status'] = "In Factory Queue ⚙️"
+                    t.pop('start_ts', None)
+                    t.pop('render_start', None)
+                render_queue.put(bp)
+                resumed += 1
+            else:
+                # Task lama yang tidak punya blueprint saat server restart
+                if t.get('status') == "In Factory Queue ⚙️" or "Rendering" in t.get('status', ''):
+                    t['status'] = "Dibatalkan (Server Restart) ⚠️"
+                    history_tasks.insert(0, t)
+
+        active_tasks = [t for t in active_tasks if "Dibatalkan" not in t.get('status', '')]
+    save_tasks_db()
+    if resumed > 0:
+        print(f"[KeiBot] 🔄 Berhasil memulihkan {resumed} task ke antrean setelah restart!")
 
 def get_fresh_credentials(channel_data):
     creds_str = channel_data.get('creds_list', [channel_data.get('creds_json')])[0]
@@ -563,6 +591,9 @@ class AudioBrain:
 
     def load(self, path, max_duration=None):
         try:
+            self.y = None
+            self.onset_env = None
+            gc.collect()
             self.y, self.sr = librosa.load(path, sr=22050, mono=True, duration=max_duration)
             self.onset_env = librosa.onset.onset_strength(y=self.y, sr=self.sr)
             self.duration = len(self.y) / self.sr
@@ -1630,8 +1661,9 @@ def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg)
     if render_preset not in ('ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'):
         render_preset = 'ultrafast'
 
+    ff_threads = str(max(1, min(4, os.cpu_count() or 2)))
     cmd = [
-        get_ffmpeg_path(), '-y', '-threads', '0', 
+        get_ffmpeg_path(), '-y', '-threads', ff_threads, 
         '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', f'{w}x{h}', '-pix_fmt', 'bgr24', '-r', str(fps), 
         '-i', '-', 
         '-i', audio_path, 
@@ -1924,12 +1956,25 @@ def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg)
             proc.stdin.write(frame.tobytes())
             
     except Exception as e:
-        proc.stdin.close()
-        proc.terminate()
+        try: proc.stdin.close()
+        except: pass
+        try: proc.terminate()
+        except: pass
         bg.close()
+        try:
+            del audio; del bg; del vis
+        except: pass
+        gc.collect()
         raise e
         
-    proc.stdin.close(); proc.wait(); bg.close()
+    try: proc.stdin.close()
+    except: pass
+    proc.wait()
+    bg.close()
+    try:
+        del audio; del bg; del vis
+    except: pass
+    gc.collect()
 
 # ==========================================
 # 🚀 BACKGROUND WORKER: OTO-LOOP ULTIMATE
@@ -1941,6 +1986,12 @@ def background_worker():
         task = render_queue.get()
         task_id = task['id']
         yt_id = task['yt_id']
+        
+        # Cek jika task sudah dibatalkan user sebelumnya saat masih di antrean
+        if stop_flags.get(task_id):
+            stop_flags.pop(task_id, None)
+            render_queue.task_done()
+            continue
         
         # 🔥 SMART COOLDOWN SYSTEM (PUTAR BALIK ANTREAN) 🔥
         if yt_id in channel_cooldowns:
@@ -2458,9 +2509,19 @@ def background_worker():
             for path in temp_files:
                 try: os.remove(path)
                 except: pass
+            # Bersihkan seg_dir dan file intermediate smart cut jika tersisa
+            try:
+                seg_dir = os.path.join(BASE_UPLOAD, f"seg_{task_id}")
+                if os.path.exists(seg_dir): shutil.rmtree(seg_dir, ignore_errors=True)
+                for extra in [f"rem_{task_id}.mp4", f"smart_{task_id}.mp4", f"smart_{task_id}.txt"]:
+                    ep = os.path.join(BASE_UPLOAD, extra)
+                    if os.path.exists(ep): os.remove(ep)
+            except: pass
             stop_flags.pop(task_id, None)
             render_queue.task_done()
+            gc.collect()
 
+restore_and_resume_queue()
 threading.Thread(target=background_worker, daemon=True).start()
 
 # ==========================================
@@ -2750,6 +2811,16 @@ def get_playlists():
 @app.route('/api/stop_task/<int:task_id>', methods=['POST'])
 def stop_task(task_id):
     stop_flags[task_id] = True
+    with db_lock:
+        for t in active_tasks:
+            if t['id'] == task_id and t.get('status') == "In Factory Queue ⚙️":
+                t['status'] = "Dibatalkan Pengguna 🛑"
+                t.pop('blueprint', None)
+                history_tasks.insert(0, t)
+                active_tasks.remove(t)
+                if len(history_tasks) > 50: history_tasks.pop()
+                break
+    save_tasks_db()
     return jsonify({"status": "success", "message": "Dihentikan!"})
 
 @app.route('/api/check_secret')
@@ -2916,8 +2987,16 @@ def batch_create():
             "output_dest": data.get('output_dest', 'youtube'),
             "vps_folder": data.get('vps_folder', OUTPUT_DIR)
         }
+        task_entry = {
+            "id": t_id,
+            "title": blueprint['title'],
+            "time": blueprint['publish_date'],
+            "status": "In Factory Queue ⚙️",
+            "type": "📺 VOD",
+            "blueprint": blueprint
+        }
         with db_lock:
-            active_tasks.append({"id": t_id, "title": blueprint['title'], "time": blueprint['publish_date'], "status": "In Factory Queue ⚙️", "type": "📺 VOD"})
+            active_tasks.append(task_entry)
         
         # Masukkan blueprint ke antrean in-memory worker
         render_queue.put(blueprint)
@@ -2984,10 +3063,4 @@ def clear_logs():
         return jsonify({"status": "error", "error": str(e)[:50]})
 
 if __name__ == '__main__':
-    for t in active_tasks:
-        if t['status'] == "In Factory Queue ⚙️" or "Rendering" in t['status']:
-            t['status'] = "Dibatalkan (Server Restart) ⚠️"
-            history_tasks.insert(0, t)
-    active_tasks = [t for t in active_tasks if "Dibatalkan" not in t['status']]
-    save_tasks_db()
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
