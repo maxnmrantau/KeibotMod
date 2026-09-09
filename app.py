@@ -262,6 +262,7 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "keibot-output") if os.name == 'nt' else '/r
 DB_FILE = os.path.join(BASE_DIR, 'channels_db.json')
 TASKS_FILE = os.path.join(BASE_DIR, 'tasks_db.json')
 PRESETS_FILE = os.path.join(BASE_DIR, 'presets.json')
+METADATA_PRESETS_FILE = os.path.join(BASE_DIR, 'metadata_presets.json')
 CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, 'client_secret.json')
 SCOPES = ['https://www.googleapis.com/auth/youtube', 'https://www.googleapis.com/auth/youtube.upload']
 
@@ -2133,12 +2134,24 @@ def background_worker():
                     if k in user_cfg:
                         preset[k] = user_cfg[k]
             # ⏱️ TARGET DURATION & RENDER TIME OPTIMIZATION
-            target_hours = float(task.get('target_duration_hours', 1))
-            target_sec = target_hours * 3600
+            raw_target_duration = task.get('target_duration_hours', 1)
+            is_original_duration = (str(raw_target_duration).strip().lower() == 'original')
+            if is_original_duration:
+                target_hours = base_duration_sec / 3600.0
+                target_sec = base_duration_sec
+                render_duration = base_duration_sec
+                loop_count = 1
+            else:
+                try:
+                    target_hours = float(raw_target_duration)
+                except (ValueError, TypeError):
+                    target_hours = 1.0
+                target_sec = target_hours * 3600
 
-            # 🚀 OPTIMASI KRITIS: Jika target durasi lebih pendek dari gabungan MP3,
-            # hanya render durasi yang dibutuhkan (jangan render 20 menit MP3 jika video hanya 6 menit!)
-            render_duration = min(base_duration_sec, target_sec) if target_sec > 0 else base_duration_sec
+                # 🚀 OPTIMASI KRITIS: Jika target durasi lebih pendek dari gabungan MP3,
+                # hanya render durasi yang dibutuhkan (jangan render 20 menit MP3 jika video hanya 6 menit!)
+                render_duration = min(base_duration_sec, target_sec) if target_sec > 0 else base_duration_sec
+                loop_count = math.ceil(target_sec / render_duration) if render_duration > 0 else 1
 
             # Filter tracklist schedule agar hanya memuat track yang masuk dalam durasi render
             preset['track_schedule'] = [tr for tr in track_schedule if tr['start'] < render_duration]
@@ -2152,7 +2165,11 @@ def background_worker():
             if stop_flags.get(task_id): raise Exception("Dibatalkan")
             with db_lock:
                 for d in active_tasks:
-                    if d['id'] == task_id: d['status'] = f"Rendering Visual ({int(render_duration//60)}m {int(render_duration%60)}s)... ⚡"
+                    if d['id'] == task_id:
+                        if is_original_duration:
+                            d['status'] = f"Rendering Visual Durasi Asli ({int(render_duration//60)}m {int(render_duration%60)}s)... 🎵"
+                        else:
+                            d['status'] = f"Rendering Visual ({int(render_duration//60)}m {int(render_duration%60)}s)... ⚡"
             save_tasks_db()
 
             render_video_core(task_id, base_audio, bg_paths, base_video, render_duration, preset)
@@ -2290,7 +2307,11 @@ def background_worker():
                 # cleanup segment files
                 shutil.rmtree(seg_dir, ignore_errors=True)
 
-            loop_count = math.ceil(target_sec / render_duration) if render_duration > 0 else 1
+            if is_original_duration:
+                loop_count = 1
+                target_sec = render_duration
+            else:
+                loop_count = math.ceil(target_sec / render_duration) if render_duration > 0 else 1
 
             if loop_count > 1:
                 with db_lock:
@@ -2636,6 +2657,50 @@ def delete_preset():
                     
                 return jsonify({"status": "success"})
                 
+        return jsonify({"status": "error", "message": "Preset tidak ditemukan"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+# --- METADATA PRESET API ---
+@app.route('/api/save_metadata_preset', methods=['POST'])
+def save_metadata_preset():
+    data = request.json
+    try:
+        presets = {}
+        if os.path.exists(METADATA_PRESETS_FILE):
+            with open(METADATA_PRESETS_FILE, 'r', encoding='utf-8') as f:
+                try: presets = json.load(f)
+                except: pass
+        presets.update(data)
+        with open(METADATA_PRESETS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(presets, f, indent=4, ensure_ascii=False)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+@app.route('/api/get_metadata_presets', methods=['GET'])
+def get_metadata_presets():
+    if os.path.exists(METADATA_PRESETS_FILE):
+        with open(METADATA_PRESETS_FILE, 'r', encoding='utf-8') as f:
+            try:
+                return jsonify(json.load(f))
+            except:
+                pass
+    return jsonify({})
+
+@app.route('/api/delete_metadata_preset', methods=['POST'])
+def delete_metadata_preset():
+    data = request.json
+    preset_name = data.get('name')
+    try:
+        if os.path.exists(METADATA_PRESETS_FILE):
+            with open(METADATA_PRESETS_FILE, 'r', encoding='utf-8') as f:
+                presets = json.load(f)
+            if preset_name in presets:
+                del presets[preset_name]
+                with open(METADATA_PRESETS_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(presets, f, indent=4, ensure_ascii=False)
+                return jsonify({"status": "success"})
         return jsonify({"status": "error", "message": "Preset tidak ditemukan"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})

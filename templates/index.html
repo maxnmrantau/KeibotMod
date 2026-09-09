@@ -768,7 +768,16 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
         </div>
 
         <div class="form-section">
-          <div class="fs-title">📝 Template Metadata YouTube</div>
+          <div class="fs-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <span>📝 Template Metadata YouTube</span>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              <select id="meta-preset-load" style="font-size:11px; padding:3px 6px; border-radius:6px; background:var(--surface); color:var(--text); border:1px solid var(--border);" onchange="loadMetaPreset(this.value)">
+                <option value="">-- Load Preset Metadata --</option>
+              </select>
+              <button type="button" class="btn btn-g btn-sm" style="font-size:10px; padding:3px 8px;" onclick="saveMetaPreset()">💾 Simpan Preset</button>
+              <button type="button" class="btn btn-danger btn-sm" style="font-size:10px; padding:3px 8px;" onclick="deleteMetaPreset()">🗑 Hapus</button>
+            </div>
+          </div>
           <div class="g2">
             <div class="fg"><label class="fl">Deskripsi Video</label><textarea id="bc-desc" rows="4" placeholder="Deskripsi yang sama untuk semua video...">🎵 Enjoy this lo-fi beat for studying, relaxing, or working.
 📌 Subscribe for daily uploads!</textarea></div>
@@ -804,8 +813,9 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
             <div class="fg" id="custom-interval-wrap" style="display:none"><label class="fl">Interval Custom <small>(hari)</small></label><input type="number" id="bc-custom-interval" value="1" min="0.1" step="0.1" oninput="updateBatchPreview()"></div>
             <div class="fg" style="margin-bottom:18px; padding-bottom:18px; border-bottom:1px dashed var(--border2);">
               <label class="fl" style="color:var(--green); font-size:13px;">⏱️ Target Durasi Final Video</label>
-              <div style="font-family:var(--font-m);font-size:10px;color:var(--muted);margin-bottom:8px">Sistem otomatis loop agar durasi pas.</div>
+              <div id="bc-target-dur-sub" style="font-family:var(--font-m);font-size:10px;color:var(--muted);margin-bottom:8px">Sistem otomatis loop agar durasi pas.</div>
               <select id="bc-target-duration" onchange="onTargetDurationChange()" style="font-size:14px; font-weight:bold; background:rgba(0,232,135,.05); border-color:rgba(0,232,135,.3); color:var(--green);">
+                <option value="original">🎵 Sesuai Durasi Asli Audio (No Cut & No Loop)</option>
                 <option value="1">1 Jam (60 Menit)</option>
                 <option value="3">3 Jam</option>
                 <option value="5">5 Jam</option>
@@ -1848,6 +1858,16 @@ function onTargetDurationChange() {
   }
   const randWrap = document.getElementById('bc-random-duration-wrap');
   if (randWrap) randWrap.style.display = val === 'random' ? 'block' : 'none';
+  const sublabel = document.getElementById('bc-target-dur-sub');
+  if (sublabel) {
+      if (val === 'original') {
+          sublabel.textContent = 'Durasi video 100% mengikuti durasi asli file MP3 (tanpa potong & tanpa loop).';
+          sublabel.style.color = 'var(--green)';
+      } else {
+          sublabel.textContent = 'Sistem otomatis loop agar durasi pas.';
+          sublabel.style.color = 'var(--muted)';
+      }
+  }
   updateBatchPreview();
 }
 
@@ -1939,7 +1959,9 @@ function updateBatchPreview() {
   
   const targetSel = document.getElementById('bc-target-duration').value;
   let target_text = '';
-  if (targetSel === 'random') {
+  if (targetSel === 'original') {
+      target_text = '🎵 Sesuai MP3 Asli';
+  } else if (targetSel === 'random') {
       const minM = document.getElementById('bc-rand-min').value || 60;
       const maxM = document.getElementById('bc-rand-max').value || 80;
       target_text = `Acak (${minM}-${maxM} Menit)`;
@@ -1977,7 +1999,9 @@ function buildFinalSchedule() {
   const count = parseInt(document.getElementById('bc-count').value) || 0;
   const targetSel = document.getElementById('bc-target-duration').value;
   let target_text = '';
-  if (targetSel === 'random') {
+  if (targetSel === 'original') {
+      target_text = '🎵 Sesuai MP3 Asli';
+  } else if (targetSel === 'random') {
       const minM = document.getElementById('bc-rand-min').value || 60;
       const maxM = document.getElementById('bc-rand-max').value || 80;
       target_text = `Acak (${minM}-${maxM} Menit)`;
@@ -2037,7 +2061,9 @@ function processBatch() {
 
   const targetSel = document.getElementById('bc-target-duration').value;
   let target_durations_hours = [];
-  if (targetSel === 'random') {
+  if (targetSel === 'original') {
+      for(let i=0; i<count; i++) target_durations_hours.push('original');
+  } else if (targetSel === 'random') {
       const minM = parseFloat(document.getElementById('bc-rand-min').value) || 60;
       const maxM = parseFloat(document.getElementById('bc-rand-max').value) || 80;
       for(let i=0; i<count; i++) {
@@ -2117,6 +2143,77 @@ function refreshBatchDropdowns() {
   sel.innerHTML = '<option value="">-- Pilih Channel --</option>';
   channels.forEach(c => sel.innerHTML += `<option value="${c.yt_id}">${c.name}</option>`);
   if (val) { sel.value = val; onBcChannelChange(); }
+}
+
+// ────────────────────────────────────────────────────────
+//  METADATA PRESETS (Template YouTube)
+// ────────────────────────────────────────────────────────
+let metaPresets = {};
+
+function refreshMetaPresetList() {
+  const sel = document.getElementById('meta-preset-load');
+  if (!sel) return;
+  const currVal = sel.value;
+  const keys = Object.keys(metaPresets);
+  sel.innerHTML = '<option value="">-- Load Preset Metadata --</option>' + keys.map(k => `<option value="${k}">${k}</option>`).join('');
+  if (keys.includes(currVal)) sel.value = currVal;
+}
+
+function loadMetaPreset(name) {
+  if (!name || !metaPresets[name]) return;
+  const p = metaPresets[name];
+  if (p.desc !== undefined && document.getElementById('bc-desc')) document.getElementById('bc-desc').value = p.desc;
+  if (p.tags !== undefined && document.getElementById('bc-tags')) {
+    document.getElementById('bc-tags').value = p.tags;
+    if (typeof validateTags === 'function') validateTags();
+  }
+  if (p.privacy !== undefined && document.getElementById('bc-privacy')) {
+    document.getElementById('bc-privacy').value = p.privacy;
+  }
+  toast(`Preset metadata "${name}" dimuat! 📋`, 'info');
+}
+
+function saveMetaPreset() {
+  const name = prompt('Nama preset metadata (contoh: Channel Gaming):');
+  if (!name || !name.trim()) return;
+  const trimmed = name.trim();
+  const desc = document.getElementById('bc-desc') ? document.getElementById('bc-desc').value : '';
+  const tags = document.getElementById('bc-tags') ? document.getElementById('bc-tags').value : '';
+  const privacy = document.getElementById('bc-privacy') ? document.getElementById('bc-privacy').value : 'private';
+
+  metaPresets[trimmed] = { desc, tags, privacy };
+  localStorage.setItem('keibot_meta_presets', JSON.stringify(metaPresets));
+  refreshMetaPresetList();
+
+  const sel = document.getElementById('meta-preset-load');
+  if (sel) sel.value = trimmed;
+
+  fetch('/api/save_metadata_preset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [trimmed]: metaPresets[trimmed] })
+  }).catch(() => {});
+
+  toast(`Preset metadata "${trimmed}" disimpan! 💾`, 'success');
+}
+
+function deleteMetaPreset() {
+  const sel = document.getElementById('meta-preset-load');
+  const name = sel ? sel.value : '';
+  if (!name) { toast('Pilih preset metadata yang ingin dihapus dari dropdown!', 'warn'); return; }
+  if (!confirm(`Hapus preset metadata "${name}"?`)) return;
+
+  delete metaPresets[name];
+  localStorage.setItem('keibot_meta_presets', JSON.stringify(metaPresets));
+  refreshMetaPresetList();
+
+  fetch('/api/delete_metadata_preset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  }).catch(() => {});
+
+  toast(`Preset metadata "${name}" berhasil dihapus! 🗑️`, 'success');
 }
 
 // ────────────────────────────────────────────────────────
@@ -3672,6 +3769,14 @@ function init() {
       if (d && typeof d === 'object' && !Array.isArray(d)) { visPresets = d; } else { visPresets = {}; }
       localStorage.setItem('wp_presets', JSON.stringify(visPresets)); refreshVisPresetList();
     }).catch(() => refreshVisPresetList());
+  fetch('/api/get_metadata_presets').then(r => r.json()).then(d => {
+      if (d && typeof d === 'object' && !Array.isArray(d)) { metaPresets = d; }
+      else { metaPresets = JSON.parse(localStorage.getItem('keibot_meta_presets') || '{}'); }
+      localStorage.setItem('keibot_meta_presets', JSON.stringify(metaPresets)); refreshMetaPresetList();
+    }).catch(() => {
+      metaPresets = JSON.parse(localStorage.getItem('keibot_meta_presets') || '{}');
+      refreshMetaPresetList();
+    });
   const now = new Date(); now.setMinutes(0, 0, 0); document.getElementById('bc-start-date').value = now.toISOString().slice(0, 16);
   
   // Load VPS folder from localStorage

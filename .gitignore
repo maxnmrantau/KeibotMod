@@ -3,6 +3,8 @@ config.json
 client_secret.json
 channels_db.json
 tasks_db.json
+presets.json
+metadata_presets.json
 
 # Abaikan folder hasil render & cache
 uploads/
