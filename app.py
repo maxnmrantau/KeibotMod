@@ -284,6 +284,15 @@ GALLERY_FOLDER_MAP = {
 def resolve_folder(g_type: str) -> str:
     return GALLERY_FOLDER_MAP.get(str(g_type).strip().lower(), 'audios')
 
+def safe_float(val, default=0.0):
+    """Konversi string ke float dengan aman tanpa crash jika berisi teks seperti 'original'"""
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
 def load_tasks_db():
     if os.path.exists(TASKS_FILE):
         try:
@@ -767,7 +776,7 @@ class VisualEngine:
         sx1 = x1 - (cx - r); sx2 = sx1 + (x2 - x1)
         sy1 = y1 - (cy - r); sy2 = sy1 + (y2 - y1)
         sub_sprite = sprite[sy1:sy2, sx1:sx2]
-        eff_alpha = max(0.0, min(1.0, float(alpha)))
+        eff_alpha = max(0.0, min(1.0, safe_float(alpha, 1.0)))
         tint = (sub_sprite * np.array(color_bgr, dtype=np.float32) * eff_alpha).astype(np.uint8)
         roi = frame[y1:y2, x1:x2]
         cv2.add(roi, tint, dst=roi)
@@ -1300,7 +1309,7 @@ class VisualEngine:
         sz_mult = {'small': 0.65, 'large': 1.6}.get(cfg.get('part_size', 'medium'), 1.0)
         life_mult = {'short': 0.6, 'long': 1.8}.get(cfg.get('part_life', 'medium'), 1.0)
         dens_mult = {'low': 0.5, 'high': 1.8}.get(cfg.get('part_density', 'medium'), 1.0)
-        part_alpha = max(0.0, min(1.0, float(cfg.get('part_opacity', 1.0))))
+        part_alpha = max(0.0, min(1.0, safe_float(cfg.get('part_opacity', 1.0), 1.0)))
 
         spd = max(0.25, (1.0 + (vol * 0.12)) * p_spd)
         beat_boost = 0.40 if (is_hit and vol > 1.2) else 0.0
@@ -1933,8 +1942,8 @@ def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg)
                 ts_pos = cfg.get('ts_pos', 'bl')
                 ts_font_name = cfg.get('ts_font', 'M')
                 ts_color_hex = cfg.get('ts_color', '#ffffff')
-                ts_offx = float(cfg.get('ts_offx', 50)) / 100.0
-                ts_offy = float(cfg.get('ts_offy', 90)) / 100.0
+                ts_offx = safe_float(cfg.get('ts_offx', 50), 50.0) / 100.0
+                ts_offy = safe_float(cfg.get('ts_offy', 90), 90.0) / 100.0
                 ts_color = hex_to_rgb(ts_color_hex)
                 ts_color_bgr = (ts_color[2], ts_color[1], ts_color[0])
                 ts_font_map = {'M': cv2.FONT_HERSHEY_DUPLEX, 'S': cv2.FONT_HERSHEY_SIMPLEX, 'I': cv2.FONT_HERSHEY_TRIPLEX, 
@@ -2037,8 +2046,26 @@ def background_worker():
             if not audio_paths: raise Exception("Gallery Audio Kosong!")
             
             mp3_req = int(task.get('mp3_per_video', 5))
-            mp3_count = min(mp3_req, len(audio_paths))
-            selected_audios = audio_paths[:mp3_count] 
+            
+            # Filter audio yang sehat & valid (skip jika file 0-byte, corrupt, atau durasi 0)
+            valid_audios = []
+            for ap in audio_paths:
+                if len(valid_audios) >= mp3_req:
+                    break
+                if not os.path.exists(ap) or os.path.getsize(ap) < 1024:
+                    print(f"[KeiBot] Skip audio kosong/rusak (<1KB): {ap}")
+                    continue
+                probe = subprocess.run([get_ffprobe_path(), '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', ap], capture_output=True, text=True)
+                try: dur = float(probe.stdout.strip())
+                except: dur = 0.0
+                if dur <= 0.0:
+                    print(f"[KeiBot] Skip audio durasi tidak valid: {ap}")
+                    continue
+                title = os.path.splitext(os.path.basename(ap))[0]
+                valid_audios.append((ap, dur, title))
+
+            if not valid_audios:
+                raise Exception("Tidak ada file audio yang valid di Gallery!")
 
             track_schedule = []
             current_sec = 0.0
@@ -2046,15 +2073,11 @@ def background_worker():
             base_audio = os.path.join(BASE_UPLOAD, f"temp_a_{task_id}.mp3")
             c_txt = os.path.join(BASE_UPLOAD, f"temp_c_{task_id}.txt")
             with open(c_txt, 'w', encoding='utf-8') as f:
-                for ap in selected_audios:
+                for ap, dur, title in valid_audios:
                     safe_path = os.path.abspath(ap).replace('\\', '/')
-                    f.write(f"file '{safe_path}'\n")
-                    
-                    probe = subprocess.run([get_ffprobe_path(), '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', ap], capture_output=True, text=True)
-                    try: dur = float(probe.stdout.strip())
-                    except: dur = 0.0
-                    
-                    title = os.path.splitext(os.path.basename(ap))[0]
+                    # Escape karakter single quote agar sintaks concat FFmpeg tidak patah
+                    safe_path_concat = safe_path.replace("'", "'\\''")
+                    f.write(f"file '{safe_path_concat}'\n")
                     
                     track_schedule.append({
                         'title': title,
@@ -2065,7 +2088,12 @@ def background_worker():
                     })
                     current_sec += dur
 
-            subprocess.run([get_ffmpeg_path(), '-y', '-threads', '2', '-f', 'concat', '-safe', '0', '-i', c_txt, '-c:a', 'libmp3lame', '-q:a', '2', base_audio], check=True, capture_output=True)
+            try:
+                subprocess.run([get_ffmpeg_path(), '-y', '-threads', '2', '-f', 'concat', '-safe', '0', '-i', c_txt, '-c:a', 'libmp3lame', '-q:a', '2', base_audio], check=True, capture_output=True)
+            except subprocess.CalledProcessError as e:
+                err_text = e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e)
+                last_err = [l.strip() for l in err_text.splitlines() if l.strip()][-3:]
+                raise Exception(f"Concat Audio Gagal: {' | '.join(last_err)}")
 
             probe = subprocess.run([
                 get_ffprobe_path(), '-v', 'error', '-show_entries', 'format=duration', 
@@ -2135,7 +2163,7 @@ def background_worker():
                         preset[k] = user_cfg[k]
             # ⏱️ TARGET DURATION & RENDER TIME OPTIMIZATION
             raw_target_duration = task.get('target_duration_hours', 1)
-            is_original_duration = (str(raw_target_duration).strip().lower() == 'original')
+            is_original_duration = (str(raw_target_duration).strip().lower() in ('original', 'asli', 'auto'))
             if is_original_duration:
                 target_hours = base_duration_sec / 3600.0
                 target_sec = base_duration_sec
@@ -2177,11 +2205,11 @@ def background_worker():
 
             # ── SMART CUT: potong & acak ulang chunk video ──
             smart_cut = task.get('smart_cut', False)
-            cut_duration = float(task.get('cut_duration', 5))
+            cut_duration = safe_float(task.get('cut_duration', 5), 5.0)
             cut_remainder = task.get('cut_remainder', 'end')
             cut_use_remainder = task.get('cut_use_remainder', True)
             use_transition = task.get('use_transition', False)
-            trans_dur = min(2.0, max(0.1, float(task.get('transition_duration', 0.5))))
+            trans_dur = min(2.0, max(0.1, safe_float(task.get('transition_duration', 0.5), 0.5)))
             if smart_cut and cut_duration > 0 and render_duration > cut_duration:
                 with db_lock:
                     for d in active_tasks:
@@ -2294,7 +2322,8 @@ def background_worker():
                         smart_txt = os.path.join(BASE_UPLOAD, f"smart_{task_id}.txt")
                         with open(smart_txt, 'w', encoding='utf-8') as f:
                             for ch in chunks:
-                                f.write(f"file '{os.path.abspath(ch).replace(chr(92), '/')}'\n")
+                                esc_ch = os.path.abspath(ch).replace(chr(92), '/').replace("'", "'\\''")
+                                f.write(f"file '{esc_ch}'\n")
                         subprocess.run([
                             get_ffmpeg_path(), '-y', '-threads', '0', '-f', 'concat', '-safe', '0',
                             '-i', smart_txt, '-c', 'copy', smart_video
@@ -2311,7 +2340,7 @@ def background_worker():
                 loop_count = 1
                 target_sec = render_duration
             else:
-                loop_count = math.ceil(target_sec / render_duration) if render_duration > 0 else 1
+                loop_count = math.ceil(target_sec / render_duration) if (render_duration > 0 and target_sec > 0) else 1
 
             if loop_count > 1:
                 with db_lock:
@@ -2322,7 +2351,7 @@ def background_worker():
                 loop_txt = os.path.join(BASE_UPLOAD, f"loop_{task_id}.txt")
                 with open(loop_txt, 'w', encoding='utf-8') as f:
                     for _ in range(loop_count):
-                        safe_path_vid = os.path.abspath(base_video).replace('\\', '/')
+                        safe_path_vid = os.path.abspath(base_video).replace('\\', '/').replace("'", "'\\''")
                         f.write(f"file '{safe_path_vid}'\n")
 
                 if stop_flags.get(task_id): raise Exception("Dibatalkan")
@@ -2516,7 +2545,12 @@ def background_worker():
                 move_to_history(task_id, f"Render Selesai ✅ <a href='/static/final_{task_id}.mp4' target='_blank'>[Download]</a>")
         
         except Exception as e:
-            err_msg = str(e)
+            if isinstance(e, subprocess.CalledProcessError) and e.stderr:
+                err_text = e.stderr.decode('utf-8', errors='ignore')
+                last_lines = [l.strip() for l in err_text.splitlines() if l.strip()][-2:]
+                err_msg = f"{e} | FFmpeg: {' '.join(last_lines)}"
+            else:
+                err_msg = str(e)
             if "Limit" in err_msg or "Cooldown" in err_msg or "Habis" in err_msg:
                 with db_lock:
                     for d in active_tasks:
@@ -2791,6 +2825,11 @@ def upload_gallery():
             safe_name = os.path.basename(f.filename)
             dest = os.path.join(folder, safe_name)
             f.save(dest)
+            if os.path.getsize(dest) == 0:
+                try: os.remove(dest)
+                except: pass
+                errors.append(f"{f.filename}: file kosong (0 bytes)")
+                continue
             saved += 1
         except Exception as e:
             errors.append(f"{f.filename}: {str(e)}")
