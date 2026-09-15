@@ -422,8 +422,10 @@ def api_key_checker_worker():
     while True:
         time.sleep(10) 
         new_notifs = []
+        status_changed = False
         for c in database_channel:
             creds_list = c.get('creds_list', [c.get('creds_json', '')])
+            channel_has_expired = False
             for idx, cred_str in enumerate(creds_list):
                 if not cred_str: continue
                 try:
@@ -431,10 +433,17 @@ def api_key_checker_worker():
                     if creds.expired and creds.refresh_token:
                         creds.refresh(Request())
                 except Exception as e:
+                    channel_has_expired = True
                     msg = f"⚠️ API Key #{idx+1} untuk Channel '{c.get('name','Unknown')}' EXPIRED! Silakan hapus dan tautkan ulang."
                     if not any(n['msg'] == msg for n in system_notifications):
                         new_notifs.append({"msg": msg, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
+            if channel_has_expired:
+                c['status'] = "Token Expired 🔴"
+                status_changed = True
         
+        if status_changed:
+            save_channels(database_channel)
+            
         if new_notifs:
             with db_lock:
                 system_notifications.extend(new_notifs)
@@ -2384,7 +2393,7 @@ def background_worker():
                 save_tasks_db()
                 dl_link = f"/download_vps/{os.path.basename(dest_path)}"
                 move_to_history(task_id, f"Render Selesai ✅ <a href='{dl_link}' target='_blank'>[Download Video]</a>")
-                return  # stop di sini, jangan lanjut upload YouTube
+                # Selesai untuk tujuan VPS, alur akan berlanjut ke finally untuk cleanup dan ambil task berikutnya
             elif channel_data:
                 # YouTube upload (existing logic)
                 creds_list = channel_data.get('creds_list', [channel_data.get('creds_json')])
@@ -2531,6 +2540,16 @@ def background_worker():
                         if "invalid_grant" in err_str or "expired" in err_str or "revoked" in err_str:
                             pesan_error = "Sesi Kedaluwarsa (Tautkan Ulang!)"
                             channel_cooldowns[yt_id] = time.time() + (3600 * 24)
+                            ch_name = ch_data.get('name', 'Unknown')
+                            exp_msg = f"⚠️ Token API Channel '{ch_name}' EXPIRED! Silakan tautkan ulang channel."
+                            with db_lock:
+                                if not any(n.get('msg') == exp_msg for n in system_notifications):
+                                    system_notifications.append({"msg": exp_msg, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
+                                for ch_item in database_channel:
+                                    if ch_item.get('yt_id') == yt_id:
+                                        ch_item['status'] = "Token Expired 🔴"
+                                        save_channels(database_channel)
+                                        break
                         elif "timeout" in err_str or "connection" in err_str or "broken" in err_str:
                             pesan_error = "Koneksi VPS Putus/Timeout"
                         else:
@@ -2573,7 +2592,10 @@ def background_worker():
                     if os.path.exists(ep): os.remove(ep)
             except: pass
             stop_flags.pop(task_id, None)
-            render_queue.task_done()
+            try:
+                render_queue.task_done()
+            except Exception:
+                pass
             gc.collect()
 
 restore_and_resume_queue()
@@ -2599,9 +2621,20 @@ def clear_notifications():
 @app.route('/api/get_dashboard_stats')
 def get_dashboard_stats():
     sys = get_system_stats()
+    disk_used_gb, disk_total_gb, disk_pct = 0.0, 0.0, 0.0
+    try:
+        import shutil
+        du = shutil.disk_usage(BASE_DIR)
+        disk_total_gb = round(du.total / (1024**3), 1)
+        disk_used_gb  = round(du.used  / (1024**3), 1)
+        disk_free_gb  = round(du.free  / (1024**3), 1)
+        disk_pct = round(du.used / du.total * 100, 1) if du.total > 0 else 0.0
+    except:
+        disk_free_gb = 0.0
     return jsonify({
         "channels": len(database_channel), "active_tasks": len(active_tasks), "history_tasks": len(history_tasks),
-        "sys_cpu": sys["cpu"], "sys_ram_pct": sys["ram_pct"], "sys_ram_text": f"{sys['ram_used']}GB / {sys['ram_total']}GB"
+        "sys_cpu": sys["cpu"], "sys_ram_pct": sys["ram_pct"], "sys_ram_text": f"{sys['ram_used']}GB / {sys['ram_total']}GB",
+        "disk_pct": disk_pct, "disk_used": disk_used_gb, "disk_total": disk_total_gb, "disk_free": disk_free_gb
     })
 
 @app.route('/api/get_youtube_analytics')
@@ -2899,6 +2932,26 @@ def upload_title_bank():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Gagal memproses file: {str(e)}"}), 500
 
+@app.route('/api/save_title_bank', methods=['POST'])
+def save_title_bank():
+    data = request.json or {}
+    yt_id = (data.get('yt_id') or '').strip()
+    titles = data.get('titles', [])
+    if not yt_id:
+        return jsonify({"status": "error", "message": "yt_id tidak boleh kosong"}), 400
+    global database_channel
+    for c in database_channel:
+        if c['yt_id'] == yt_id:
+            c['title_bank'] = [str(t).strip() for t in titles if str(t).strip()]
+            save_channels(database_channel)
+            return jsonify({
+                "status": "success",
+                "message": f"Bank judul berhasil diperbarui ({len(c['title_bank'])} judul)",
+                "total": len(c['title_bank'])
+            })
+    return jsonify({"status": "error", "message": "Channel tidak ditemukan"}), 404
+
+
 @app.route('/api/get_playlists', methods=['GET'])
 def get_playlists():
     yt_id = request.args.get('yt_id')
@@ -2917,12 +2970,14 @@ def stop_task(task_id):
     stop_flags[task_id] = True
     with db_lock:
         for t in active_tasks:
-            if t['id'] == task_id and t.get('status') == "In Factory Queue ⚙️":
-                t['status'] = "Dibatalkan Pengguna 🛑"
-                t.pop('blueprint', None)
-                history_tasks.insert(0, t)
-                active_tasks.remove(t)
-                if len(history_tasks) > 50: history_tasks.pop()
+            if t['id'] == task_id:
+                st = t.get('status', '')
+                if st == "In Factory Queue ⚙️" or "Antrean Ditunda" in st or "Antre Ulang" in st or "Gagal" in st:
+                    t['status'] = "Dibatalkan Pengguna 🛑"
+                    t.pop('blueprint', None)
+                    history_tasks.insert(0, t)
+                    active_tasks.remove(t)
+                    if len(history_tasks) > 50: history_tasks.pop()
                 break
     save_tasks_db()
     return jsonify({"status": "success", "message": "Dihentikan!"})

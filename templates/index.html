@@ -193,16 +193,22 @@ body::before {
 .tb-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .sys-monitor {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 14px;
+  border-radius: 10px;
+  padding: 8px 14px;
   font-family: var(--font-m);
+  align-items: center;
 }
-.sm-item { display: flex; flex-direction: column; }
-.sm-lbl { font-size: 8px; color: var(--muted); letter-spacing: .1em; margin-bottom: 1px; }
-.sm-val { font-size: 12px; font-weight: 700; }
+.sm-sep { width:1px; height:28px; background:var(--border); flex-shrink:0; }
+.sm-item { display: flex; flex-direction: column; gap: 3px; min-width: 60px; }
+.sm-top { display:flex; justify-content:space-between; align-items:center; }
+.sm-lbl { font-size: 8px; color: var(--muted); letter-spacing: .08em; text-transform:uppercase; font-weight:700; }
+.sm-val { font-size: 13px; font-weight: 800; line-height:1; }
+.sm-sub { font-size: 8px; color: var(--muted); margin-top:1px; }
+.sm-bar-wrap { height:4px; background:rgba(255,255,255,0.07); border-radius:4px; overflow:hidden; }
+.sm-bar { height:100%; border-radius:4px; transition: width 0.5s ease; }
 
 .content { flex: 1; overflow-y: auto; padding: 22px 26px; }
 
@@ -499,29 +505,60 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
       <div class="tb-sub" id="tb-sub">Overview sistem & analytics</div>
     </div>
     <div class="tb-right">
-      
-      <div class="notif-container" style="position:relative;">
-        <button id="notif-btn" class="btn btn-g" style="padding:8px; border-radius:50%; width:36px; height:36px; position:relative;" onclick="toggleNotif()">
-           🔔
-           <span id="notif-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--accent2); color:#fff; font-size:10px; font-weight:bold; border-radius:50%; width:18px; height:18px; line-height:18px; text-align:center;">0</span>
-        </button>
-        <div id="notif-dropdown" style="display:none; position:absolute; top:45px; right:0; width:320px; background:var(--surface); border:1px solid var(--border); border-radius:8px; z-index:100; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
-           <div style="padding:12px 14px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-              <strong style="font-size:13px; color:var(--text);">Notifikasi Sistem</strong>
-              <button class="btn btn-g btn-sm" onclick="clearNotifs()" style="font-size:10px; padding:3px 6px;">Bersihkan</button>
-           </div>
-           <div id="notif-list" style="max-height:300px; overflow-y:auto; padding:12px;">
-              <div style="font-size:11px; color:var(--muted); text-align:center;">Tidak ada notifikasi</div>
-           </div>
+      <button class="btn btn-g" onclick="openGuideModal()" style="display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; padding:7px 14px; border:1px solid var(--accent); color:var(--accent); background:var(--accent-dim); border-radius:8px; cursor:pointer; transition:0.2s;" title="Buka Panduan Lengkap & Solusi Kendala">
+        <span>📖</span> Panduan & Solusi
+      </button>
+
+      <div class="sys-monitor" title="Statistik Sumber Daya VPS Real-Time">
+        <!-- CPU -->
+        <div class="sm-item">
+          <div class="sm-top">
+            <span class="sm-lbl">CPU</span>
+            <span class="sm-val" id="sys-cpu" style="color:var(--accent)">–%</span>
+          </div>
+          <div class="sm-bar-wrap" style="width:60px">
+            <div class="sm-bar" id="sys-cpu-bar" style="width:0%;background:var(--accent);"></div>
+          </div>
+        </div>
+        <div class="sm-sep"></div>
+        <!-- RAM -->
+        <div class="sm-item">
+          <div class="sm-top">
+            <span class="sm-lbl">RAM</span>
+            <span class="sm-val" id="sys-ram" style="color:var(--green)">–%</span>
+          </div>
+          <div class="sm-bar-wrap" style="width:60px">
+            <div class="sm-bar" id="sys-ram-bar" style="width:0%;background:var(--green);"></div>
+          </div>
+          <div class="sm-sub" id="sys-ram-txt">–/–GB</div>
+        </div>
+        <div class="sm-sep"></div>
+        <!-- DISK -->
+        <div class="sm-item">
+          <div class="sm-top">
+            <span class="sm-lbl">DISK</span>
+            <span class="sm-val" id="sys-disk" style="color:var(--yellow)">–%</span>
+          </div>
+          <div class="sm-bar-wrap" style="width:60px">
+            <div class="sm-bar" id="sys-disk-bar" style="width:0%;background:var(--yellow);"></div>
+          </div>
+          <div class="sm-sub" id="sys-disk-txt">–/–GB</div>
         </div>
       </div>
-      <div class="sys-monitor">
-        <div class="sm-item"><span class="sm-lbl">CPU</span><span class="sm-val" id="sys-cpu" style="color:var(--accent)">–%</span></div>
-        <div style="width:1px;height:22px;background:var(--border)"></div>
-        <div class="sm-item"><span class="sm-lbl">RAM</span><span class="sm-val" id="sys-ram" style="color:var(--green)">–%</span></div>
-        <div class="sm-item"><span style="font-family:var(--font-m);font-size:9px;color:var(--muted)" id="sys-ram-txt">–/–GB</span></div>
-      </div>
     </div>
+  </div>
+
+  <!-- 🚨 RUNNING TEXT TICKER UNTUK TOKEN EXPIRED 🚨 -->
+  <div id="api-expired-ticker" style="display:none; background:linear-gradient(90deg, #ff0055, #ff5500); color:#fff; font-size:12px; font-weight:700; padding:8px 14px; align-items:center; gap:10px; border-bottom:1px solid rgba(255,255,255,0.2); box-shadow:0 4px 15px rgba(255,0,85,0.3); z-index:90;">
+    <span style="background:rgba(0,0,0,0.65); color:#fff; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:800; letter-spacing:0.5px; flex-shrink:0; display:flex; align-items:center; gap:4px;">
+      🚨 PERINGATAN
+    </span>
+    <marquee id="api-expired-marquee" scrollamount="7" style="flex:1; vertical-align:middle; cursor:pointer; color:#fff;" onclick="go('channels', document.getElementById('nb-channels'))">
+      ⚠️ TOKEN API YOUTUBE KEDALUWARSA (EXPIRED)! Silakan buka menu Channels dan tautkan ulang channel Anda agar jadwal video bisa diunggah ke YouTube!
+    </marquee>
+    <button onclick="go('channels', document.getElementById('nb-channels'))" class="btn btn-sm" style="background:#fff; color:#ff0055; font-weight:800; flex-shrink:0; font-size:10px; padding:4px 10px; border-radius:4px; border:none; cursor:pointer;">
+      🔗 TAUTKAN ULANG
+    </button>
   </div>
 
   <div class="content">
@@ -1277,6 +1314,221 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
     <span class="nav-icon">◎</span><span>Set</span>
   </button>
 </nav>
+
+<!-- ════════════════════════════════════════════════════════
+     📖 MODAL PANDUAN PENGGUNAAN & SOLUSI KENDALA KEIBOT
+════════════════════════════════════════════════════════ -->
+<div id="guide-modal" style="position:fixed; inset:0; background:rgba(4,9,16,0.88); backdrop-filter:blur(8px); z-index:9999; display:none; align-items:center; justify-content:center; padding:16px;">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; width:100%; max-width:860px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 25px 60px rgba(0,0,0,0.8);">
+    
+    <!-- Modal Header -->
+    <div style="padding:18px 24px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2);">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span style="font-size:24px;">📖</span>
+        <div>
+          <div style="font-size:15px; font-weight:800; color:var(--text); letter-spacing:0.5px;">PANDUAN LENGKAP & SOLUSI KENDALA KEIBOT</div>
+          <div style="font-size:11px; color:var(--muted);">Petunjuk alur kerja, integrasi Google API, dan penanganan masalah umum</div>
+        </div>
+      </div>
+      <button onclick="closeGuideModal()" style="background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:4px 8px; border-radius:6px; transition:0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">✕</button>
+    </div>
+
+    <!-- Modal Tabs -->
+    <div style="display:flex; border-bottom:1px solid var(--border); background:rgba(0,0,0,0.15); padding:0 20px;">
+      <button id="gtab-btn-1" class="guide-tab-btn active" onclick="switchGuideTab(1)" style="padding:12px 18px; border:none; background:none; font-family:var(--font-m); font-size:11px; font-weight:700; color:var(--accent); border-bottom:2px solid var(--accent); cursor:pointer;">
+        🚀 Panduan Penggunaan
+      </button>
+      <button id="gtab-btn-2" class="guide-tab-btn" onclick="switchGuideTab(2)" style="padding:12px 18px; border:none; background:none; font-family:var(--font-m); font-size:11px; font-weight:700; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer;">
+        🛠️ Solusi Kendala & FAQ
+      </button>
+      <button id="gtab-btn-3" class="guide-tab-btn" onclick="switchGuideTab(3)" style="padding:12px 18px; border:none; background:none; font-family:var(--font-m); font-size:11px; font-weight:700; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer;">
+        ⚡ Tips Kuota & Upload
+      </button>
+    </div>
+
+    <!-- Modal Body (Scrollable) -->
+    <div style="padding:22px 24px; overflow-y:auto; flex:1; line-height:1.6; font-size:12px; color:var(--text);">
+
+      <!-- TAB 1: PANDUAN PENGGUNAAN -->
+      <div id="gtab-content-1">
+        <div style="margin-bottom:18px; padding:12px 16px; background:var(--accent-dim); border:1px solid rgba(0,212,255,0.2); border-radius:8px;">
+          <strong style="color:var(--accent); display:block; margin-bottom:4px;">✨ Alur Cepat Otomasi Video KeiBot</strong>
+          Ikuti 5 langkah di bawah untuk mulai memproduksi dan menjadwalkan puluhan video YouTube otomatis.
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="background:var(--accent); color:#000; font-weight:800; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px;">1</span>
+              <strong style="font-size:13px; color:#fff;">Setup Google Cloud Console (Hanya Sekali)</strong>
+            </div>
+            <p style="color:var(--text2); margin-left:30px;">
+              1. Buka <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent);">Google Cloud Console</a> dan buat project baru.<br>
+              2. Masuk menu <b>APIs & Services > Library</b>, cari <code>YouTube Data API v3</code> lalu klik <b>Enable</b>.<br>
+              3. Masuk menu <b>OAuth consent screen</b>, pilih <b>External</b>. Isi nama aplikasi & email Anda. Di bagian <b>Test users</b>, klik <code>+ Add users</code> dan masukkan email akun YouTube Anda.<br>
+              4. Masuk menu <b>Credentials > + Create Credentials > OAuth client ID</b>. Pilih Application Type: <b>TVs and Limited Input devices</b> (atau Desktop app). Klik Create lalu <b>Download JSON</b>.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="background:var(--accent); color:#000; font-weight:800; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px;">2</span>
+              <strong style="font-size:13px; color:#fff;">Tautkan Channel YouTube ke KeiBot</strong>
+            </div>
+            <p style="color:var(--text2); margin-left:30px;">
+              1. Di KeiBot, buka menu <b>Settings</b> > upload file JSON yang baru Anda download tadi.<br>
+              2. Buka menu <b>Channels</b> > klik <b>Tautkan Channel Baru</b>.<br>
+              3. Buka link Google yang muncul, masukkan 8 digit kode, login dengan akun YouTube Anda, dan klik <b>Allow (Izinkan)</b>.<br>
+              4. Status channel akan berubah menjadi <b>Connected 🟢</b>.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="background:var(--accent); color:#000; font-weight:800; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px;">3</span>
+              <strong style="font-size:13px; color:#fff;">Upload Aset di Menu Gallery</strong>
+            </div>
+            <p style="color:var(--text2); margin-left:30px;">
+              Buka menu <b>Gallery</b>, pilih channel target, lalu upload aset:<br>
+              • <b>Audio</b>: Upload file lagu/musik (.mp3).<br>
+              • <b>Background</b>: Upload video loop (.mp4) atau gambar estetik (.jpg, .png).<br>
+              • <b>Thumbnail</b>: Upload gambar thumbnail (.jpg, .png) jika ingin pasang cover otomatis.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="background:var(--accent); color:#000; font-weight:800; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px;">4</span>
+              <strong style="font-size:13px; color:#fff;">Kelola Judul di Title Generator</strong>
+            </div>
+            <p style="color:var(--text2); margin-left:30px;">
+              Buka menu <b>Title Generator</b>. Anda bisa mengupload file <code>.txt</code> berisi bank judul atau mengetik judul manual. Anda juga bisa klik <b>✦ GENERATE SEKARANG</b> untuk memadukan judul secara acak dengan variasi hari, bulan, dan tahun.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <span style="background:var(--accent); color:#000; font-weight:800; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px;">5</span>
+              <strong style="font-size:13px; color:#fff;">Produksi & Jadwal Video di Batch Creator</strong>
+            </div>
+            <p style="color:var(--text2); margin-left:30px;">
+              Buka menu <b>Creator</b>. Pilih channel, masukkan jumlah video, pilih durasi video (misal 1 Jam atau Original), sesuaikan gaya visualizer spectrum, tentukan tanggal mulai jadwal tayang, lalu klik <b>GENERATE & RENDER VIDEO</b>. Mesin pabrik KeiBot akan meracik video dan mengunggahnya secara otomatis!
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: SOLUSI KENDALA POPULER -->
+      <div id="gtab-content-2" style="display:none;">
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          
+          <div style="background:rgba(255,77,109,0.06); border:1px solid rgba(255,77,109,0.25); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <span style="font-size:16px;">🚨</span>
+              <strong style="font-size:13px; color:var(--accent2);">Kendala 1: Token API Kedaluwarsa (Expired Tiap 7 Hari)</strong>
+            </div>
+            <p style="color:var(--text2); font-size:11.5px; margin-bottom:8px;">
+              <b>Penyebab:</b> Project Google Cloud Anda berstatus "Testing", di mana Google membatasi umur Refresh Token hanya 7 hari.<br>
+              <b>Solusi Cepat:</b> Buka menu <b>Channels</b> > klik tombol tautkan ulang channel Anda (hanya butuh 10 detik). Semua lagu MP3 dan file di galeri <b>100% AMAN tidak akan hilang</b>.
+            </p>
+          </div>
+
+          <div style="background:rgba(255,201,77,0.06); border:1px solid rgba(255,201,77,0.25); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <span style="font-size:16px;">⚙️</span>
+              <strong style="font-size:13px; color:var(--yellow);">Kendala 2: Antrean Macet / Hanya Muncul "In Factory Queue"</strong>
+            </div>
+            <p style="color:var(--text2); font-size:11.5px; margin-bottom:8px;">
+              <b>Penyebab:</b> Service pemroses background di VPS terhenti akibat error upload sebelumnya atau VPS sempat reboot.<br>
+              <b>Solusi:</b> Buka terminal VPS (SSH) Anda, lalu jalankan perintah:
+            </p>
+            <div style="background:#0a0f18; padding:8px 12px; border-radius:6px; font-family:var(--font-m); font-size:11px; color:#00e887; border:1px solid var(--border);">
+              sudo systemctl restart keibot
+            </div>
+            <p style="color:var(--muted); font-size:10.5px; margin-top:6px;">Setelah restart, mesin worker akan hidup kembali dan langsung mengeksekusi antrean.</p>
+          </div>
+
+          <div style="background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.25); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <span style="font-size:16px;">📤</span>
+              <strong style="font-size:13px; color:var(--accent);">Kendala 3: Upload Gagal Setelah Render Selesai (Limit Kuota API)</strong>
+            </div>
+            <p style="color:var(--text2); font-size:11.5px;">
+              <b>Penyebab:</b> Jatah kuota gratis YouTube API adalah 10.000 unit/hari. Upload 1 video menghabiskan 1.600 unit, sehingga 1 API Project hanya bisa mengunggah <b>maksimal 6 video per hari</b>.<br>
+              <b>Solusi:</b><br>
+              1. <i>Multi-Key:</i> Buat 3–5 project di Google Cloud Console untuk channel yang sama agar bisa upload 18–30 video/hari.<br>
+              2. <i>Output VPS:</i> Pilih opsi simpan video ke folder VPS, lalu upload bertahap setiap hari.
+            </p>
+          </div>
+
+          <div style="background:rgba(124,92,252,0.06); border:1px solid rgba(124,92,252,0.25); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <span style="font-size:16px;">🚫</span>
+              <strong style="font-size:13px; color:var(--accent3);">Kendala 4: Muncul "Error 403: access_denied" Saat Login Google</strong>
+            </div>
+            <p style="color:var(--text2); font-size:11.5px;">
+              <b>Penyebab:</b> Email akun Google yang Anda gunakan untuk login belum didaftarkan di daftar <i>Test Users</i> Google Cloud Console.<br>
+              <b>Solusi:</b> Buka Google Cloud Console > menu <b>Audience</b> (atau OAuth consent screen) > pada bagian <b>Test users</b> klik <code>+ Add users</code> > masukkan alamat email YouTube channel Anda > klik <b>Save</b>.
+            </p>
+          </div>
+
+          <div style="background:rgba(0,232,135,0.06); border:1px solid rgba(0,232,135,0.25); border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <span style="font-size:16px;">⏳</span>
+              <strong style="font-size:13px; color:var(--green);">Kendala 5: Video Durasi Panjang (>15 Menit) Ditolak YouTube</strong>
+            </div>
+            <p style="color:var(--text2); font-size:11.5px;">
+              <b>Penyebab:</b> Channel YouTube belum melakukan verifikasi nomor handphone.<br>
+              <b>Solusi:</b> Buka YouTube Studio di browser > <b>Settings > Channel > Feature Eligibility</b> > aktifkan <i>Intermediate Features</i> dengan memverifikasi nomor HP Anda via SMS.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- TAB 3: TIPS KUOTA & UPLOAD -->
+      <div id="gtab-content-3" style="display:none;">
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--accent); display:block; margin-bottom:6px;">💡 Trik Multi-Project API (Bebas Batas Upload)</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              Di Google Cloud, 1 akun email Google bisa membuat hingga <b>12 project gratis</b>. Masing-masing project memiliki jatah 10.000 kuota/hari.<br>
+              Jika Anda membuat 5 project Google Cloud dan mengunggah masing-masing file kuncinya ke channel di KeiBot, jatah upload harian Anda meningkat dari 6 video menjadi <b>30 video per hari</b>!
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--yellow); display:block; margin-bottom:6px;">🎵 Bagaimana dengan Lagu Berhak Cipta (Klaim YouTube)?</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              Lagu dengan klaim hak cipta (Content ID) <b>TIDAK AKAN</b> digagalkan oleh sistem upload API. Video tetap berhasil diunggah 100%. YouTube baru mendeteksi klaim lagu setelah video terunggah (berbagi monetisasi dengan pemilik lagu).<br>
+              <i>Tips:</i> Pastikan channel tidak terkena Copyright Strike resmi (peringatan pelanggaran), karena Strike 1 membekukan izin upload channel selama 7 hari.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--green); display:block; margin-bottom:6px;">⚡ Rekomendasi Setting Terbaik untuk VPS</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              Untuk VPS dengan RAM 2GB–4GB:<br>
+              • <b>Resolusi:</b> Pilih <code>720p</code> (ringan dan tetap tajam di YouTube).<br>
+              • <b>Render Speed:</b> Pilih <code>ultrafast</code> agar render cepat dan tidak membebani CPU VPS.<br>
+              • <b>Durasi:</b> Gunakan durasi yang sesuai (misal 1 Jam) agar proses looping concat selesai hanya dalam hitungan detik.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Modal Footer -->
+    <div style="padding:14px 24px; border-top:1px solid var(--border); background:rgba(0,0,0,0.2); display:flex; justify-content:flex-end;">
+      <button onclick="closeGuideModal()" class="btn btn-p" style="padding:8px 20px; font-size:12px;">Tutup Panduan</button>
+    </div>
+
+  </div>
+</div>
+
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
@@ -1302,6 +1554,46 @@ function generateOneTitle(bank) {
   return bank[Math.floor(Math.random() * bank.length)];
 }
 // ────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────
+//  PANDUAN & SOLUSI MODAL CONTROLLER
+// ────────────────────────────────────────────────────────
+function openGuideModal() {
+  const m = document.getElementById('guide-modal');
+  if (m) { m.style.display = 'flex'; switchGuideTab(1); }
+}
+
+function closeGuideModal() {
+  const m = document.getElementById('guide-modal');
+  if (m) m.style.display = 'none';
+}
+
+function switchGuideTab(tabNum) {
+  for (let i = 1; i <= 3; i++) {
+    const btn = document.getElementById('gtab-btn-' + i);
+    const content = document.getElementById('gtab-content-' + i);
+    if (btn) {
+      if (i === tabNum) {
+        btn.style.color = 'var(--accent)';
+        btn.style.borderBottom = '2px solid var(--accent)';
+      } else {
+        btn.style.color = 'var(--muted)';
+        btn.style.borderBottom = '2px solid transparent';
+      }
+    }
+    if (content) {
+      content.style.display = (i === tabNum) ? 'block' : 'none';
+    }
+  }
+}
+
+document.addEventListener('click', function(e) {
+  const m = document.getElementById('guide-modal');
+  if (m && m.style.display === 'flex' && e.target === m) {
+    m.style.display = 'none';
+  }
+});
+
 
 // ────────────────────────────────────────────────────────
 //  CANVAS — resize responsif
@@ -1382,45 +1674,79 @@ function toast(msg, type = 'info') {
 }
 
 // ────────────────────────────────────────────────────────
-//  NOTIFICATIONS BELL (SATPAM API)
+//  NOTIFICATIONS & TICKER EXPIRED TOKEN
 // ────────────────────────────────────────────────────────
 function fetchNotifs() {
   fetch('/api/notifications').then(r => r.json()).then(data => {
       const badge = document.getElementById('notif-badge');
       const list = document.getElementById('notif-list');
+      const ticker = document.getElementById('api-expired-ticker');
+      const marquee = document.getElementById('api-expired-marquee');
       
+      let hasExpired = false;
+      let expiredMsg = '';
+
       if (data && data.length > 0) {
-          badge.style.display = 'block';
-          badge.textContent = data.length;
-          list.innerHTML = data.map(n => `
-              <div style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px dashed var(--border);">
-                  <div style="color:var(--accent2); margin-bottom:4px; line-height:1.4; font-size:11px;">${n.msg}</div>
-                  <div style="font-family:var(--font-m); font-size:9px; color:var(--muted);">${n.time}</div>
-              </div>`).join('');
+          if (badge) {
+            badge.style.display = 'block';
+            badge.textContent = data.length;
+          }
+          if (list) {
+            list.innerHTML = data.map(n => `
+                <div style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px dashed var(--border);">
+                    <div style="color:var(--accent2); margin-bottom:4px; line-height:1.4; font-size:11px;">${n.msg}</div>
+                    <div style="font-family:var(--font-m); font-size:9px; color:var(--muted);">${n.time}</div>
+                </div>`).join('');
+          }
+          
+          const found = data.find(n => (n.msg || '').toLowerCase().includes('expired') || (n.msg || '').toLowerCase().includes('kedaluwarsa'));
+          if (found) {
+            hasExpired = true;
+            expiredMsg = `⚠️ PERINGATAN: ${found.msg} Segera tautkan ulang channel Anda di menu Channels!`;
+          }
       } else {
-          badge.style.display = 'none';
-          list.innerHTML = '<div style="font-size:11px; color:var(--muted); text-align:center;">Tidak ada notifikasi error. API Aman! 🟢</div>';
+          if (badge) badge.style.display = 'none';
+          if (list) list.innerHTML = '<div style="font-size:11px; color:var(--muted); text-align:center;">Tidak ada notifikasi error. API Aman! 🟢</div>';
+      }
+
+      // Cek juga dari daftar status channel yang ada
+      if (!hasExpired && typeof channels !== 'undefined' && channels && channels.length > 0) {
+        const expCh = channels.find(c => (c.status || '').toLowerCase().includes('expired') || (c.status || '').toLowerCase().includes('kedaluwarsa'));
+        if (expCh) {
+          hasExpired = true;
+          expiredMsg = `⚠️ PERINGATAN: Token API untuk channel "${expCh.name}" Kedaluwarsa (Expired)! Klik di sini untuk menautkan ulang.`;
+        }
+      }
+
+      if (ticker) {
+        if (hasExpired) {
+          ticker.style.display = 'flex';
+          if (marquee && expiredMsg) marquee.textContent = expiredMsg;
+        } else {
+          ticker.style.display = 'none';
+        }
       }
   }).catch(e => {});
 }
 
 function toggleNotif() {
   const d = document.getElementById('notif-dropdown');
-  d.style.display = d.style.display === 'none' ? 'block' : 'none';
+  if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
 }
 
 function clearNotifs() {
   fetch('/api/notifications/clear', {method: 'POST'}).then(r => r.json()).then(d => {
       fetchNotifs();
-      document.getElementById('notif-dropdown').style.display = 'none';
-  });
+      const drop = document.getElementById('notif-dropdown');
+      if (drop) drop.style.display = 'none';
+  }).catch(e => {});
 }
 
 // Tutup notifikasi kalau user klik di luar kotak
 document.addEventListener('click', function(e) {
     const d = document.getElementById('notif-dropdown');
     const b = document.getElementById('notif-btn');
-    if (d && d.style.display === 'block' && !d.contains(e.target) && !b.contains(e.target)) {
+    if (d && d.style.display === 'block' && !d.contains(e.target) && (!b || !b.contains(e.target))) {
         d.style.display = 'none';
     }
 });
@@ -1431,9 +1757,45 @@ document.addEventListener('click', function(e) {
 function pollSysStats() {
   fetch('/api/get_dashboard_stats').then(r => r.json()).then(d => {
     if (d.sys_cpu !== undefined) {
-      document.getElementById('sys-cpu').textContent = d.sys_cpu + '%';
-      document.getElementById('sys-ram').textContent = d.sys_ram_pct + '%';
-      document.getElementById('sys-ram-txt').textContent = d.sys_ram_text;
+      const cpu = d.sys_cpu;
+      const ram = d.sys_ram_pct;
+      const disk = d.disk_pct !== undefined ? d.disk_pct : null;
+
+      // CPU
+      const cpuEl = document.getElementById('sys-cpu');
+      const cpuBar = document.getElementById('sys-cpu-bar');
+      if (cpuEl) cpuEl.textContent = cpu + '%';
+      if (cpuBar) {
+        cpuBar.style.width = Math.min(cpu, 100) + '%';
+        cpuBar.style.background = cpu > 85 ? 'var(--accent2)' : cpu > 65 ? 'var(--yellow)' : 'var(--accent)';
+      }
+
+      // RAM
+      const ramEl = document.getElementById('sys-ram');
+      const ramBar = document.getElementById('sys-ram-bar');
+      const ramTxt = document.getElementById('sys-ram-txt');
+      if (ramEl) ramEl.textContent = ram + '%';
+      if (ramBar) {
+        ramBar.style.width = Math.min(ram, 100) + '%';
+        ramBar.style.background = ram > 85 ? 'var(--accent2)' : ram > 65 ? 'var(--yellow)' : 'var(--green)';
+      }
+      if (ramTxt) ramTxt.textContent = d.sys_ram_text;
+
+      // DISK
+      if (disk !== null) {
+        const diskEl = document.getElementById('sys-disk');
+        const diskBar = document.getElementById('sys-disk-bar');
+        const diskTxt = document.getElementById('sys-disk-txt');
+        if (diskEl) {
+          diskEl.textContent = disk + '%';
+          diskEl.style.color = disk > 85 ? 'var(--accent2)' : disk > 65 ? 'var(--yellow)' : 'var(--yellow)';
+        }
+        if (diskBar) {
+          diskBar.style.width = Math.min(disk, 100) + '%';
+          diskBar.style.background = disk > 85 ? 'var(--accent2)' : disk > 65 ? '#e0a800' : 'var(--yellow)';
+        }
+        if (diskTxt) diskTxt.textContent = `${d.disk_free}GB sisa / ${d.disk_total}GB`;
+      }
     }
     document.getElementById('st-active').textContent = d.active_tasks || 0;
   }).catch(() => {});
@@ -1730,11 +2092,16 @@ function clearTitleBank() {
 
 function saveTitleBankToServer(ch) {
   const lines = titleBankData[ch] || [];
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-  const fd = new FormData();
-  fd.append('yt_id', ch);
-  fd.append('txt_file', blob, 'titles.txt');
-  fetch('/api/upload_title_bank', { method: 'POST', body: fd }).catch(err => console.warn(err));
+  fetch('/api/save_title_bank', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ yt_id: ch, titles: lines })
+  }).then(r => r.json()).then(d => {
+    if (d.status === 'success') {
+      const c = channels.find(x => x.yt_id === ch);
+      if (c) c.title_bank = lines;
+    }
+  }).catch(err => console.warn(err));
 }
 
 function generateTitles() {
