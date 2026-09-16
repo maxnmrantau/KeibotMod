@@ -440,6 +440,12 @@ def api_key_checker_worker():
             if channel_has_expired:
                 c['status'] = "Token Expired 🔴"
                 status_changed = True
+            elif "Token Expired" in c.get('status', ''):
+                c['status'] = f"Connected 🟢 ({len(creds_list)} Keys)"
+                status_changed = True
+                c_name = c.get('name', '').lower()
+                with db_lock:
+                    system_notifications = [n for n in system_notifications if c_name not in n.get('msg', '').lower()]
         
         if status_changed:
             save_channels(database_channel)
@@ -460,9 +466,29 @@ def get_channel_folder(yt_id, sub):
     os.makedirs(path, exist_ok=True)
     return path
 
-def get_multi_backgrounds(yt_id, count=1):
+def get_multi_backgrounds(yt_id, count=1, locked_files=None):
+    """Ambil background dari gallery channel.
+    Jika locked_files (list nama file) diberikan, gunakan file tersebut
+    (pastikan ada di disk). Jika tidak, pilih secara acak sejumlah count."""
     path = get_channel_folder(yt_id, "backgrounds")
-    files = [os.path.join(path, f) for f in os.listdir(path) if f.lower().endswith(('.mp4', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.mov'))]
+    all_files = [f for f in os.listdir(path) if f.lower().endswith(('.mp4', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.mov'))]
+
+    # 🐛 FIX: Jika user mengunci background tertentu dari preview, pakai file itu langsung.
+    if locked_files:
+        result = []
+        for name in locked_files:
+            fp = os.path.join(path, name)
+            if os.path.exists(fp):
+                result.append(fp)
+        if result:
+            # Jika jumlah file terkunci < count, loop/repeat file yang ada
+            while len(result) < count:
+                result.extend(result)
+            return result[:count]
+        # Fallback ke random jika file terkunci tidak ditemukan
+        print(f"[KeiBot] locked_bg_files tidak ditemukan di disk, fallback ke random: {locked_files}")
+
+    files = [os.path.join(path, f) for f in all_files]
     if not files: return []
     random.shuffle(files)
     
@@ -2116,7 +2142,9 @@ def background_worker():
             ch_name = channel_data['name'] if channel_data else "KeiBot FM"
 
             bg_count = int(task.get('bg_count', 1))
-            bg_paths = get_multi_backgrounds(yt_id, count=bg_count)
+            # 🐛 FIX: Pakai background yang dikunci user di preview (jika ada)
+            locked_bg = task.get('locked_bg_files', [])
+            bg_paths = get_multi_backgrounds(yt_id, count=bg_count, locked_files=locked_bg if locked_bg else None)
             if not bg_paths: raise Exception("Gallery Background Kosong!")
 
             preset = task.get('vis_preset')
@@ -2677,9 +2705,13 @@ def get_channels():
 @app.route('/api/delete_channel', methods=['POST'])
 def delete_channel():
     yt_id = request.form.get('yt_id')
-    global database_channel
+    global database_channel, system_notifications
+    deleted_names = [c.get('name', '').lower() for c in database_channel if c['yt_id'] == yt_id]
     database_channel = [c for c in database_channel if c['yt_id'] != yt_id]
     save_channels(database_channel)
+    channel_cooldowns.pop(yt_id, None)
+    with db_lock:
+        system_notifications = [n for n in system_notifications if not any(d_name in n.get('msg', '').lower() for d_name in deleted_names if d_name) and yt_id not in n.get('msg', '')]
     return jsonify({"status": "success", "message": "Channel dihapus!"})
 
 # --- PRESET API ---
@@ -3077,17 +3109,40 @@ def poll_device_token():
         youtube = build('youtube', 'v3', credentials=creds)
         chan_res = youtube.channels().list(part="snippet", mine=True).execute()
         if chan_res.get('items'):
-            item = chan_res['items'][0]; global database_channel
+            item = chan_res['items'][0]; global database_channel, system_notifications
             c_idx = next((i for i, c in enumerate(database_channel) if c['yt_id'] == item['id']), None)
+            new_cred_str = creds.to_json()
             if c_idx is None:
-                new_c = {"id": len(database_channel)+1, "name": item['snippet']['title'], "yt_id": item['id'], "thumbnail": item['snippet']['thumbnails']['default']['url'], "status": "Connected 🟢 (1 Key)", "creds_list": [creds.to_json()]}
+                new_c = {"id": len(database_channel)+1, "name": item['snippet']['title'], "yt_id": item['id'], "thumbnail": item['snippet']['thumbnails']['default']['url'], "status": "Connected 🟢 (1 Key)", "creds_list": [new_cred_str]}
                 database_channel.append(new_c)
             else:
-                if 'creds_list' not in database_channel[c_idx]:
-                    database_channel[c_idx]['creds_list'] = [database_channel[c_idx].get('creds_json', '')]
-                if creds.to_json() not in database_channel[c_idx]['creds_list']:
-                    database_channel[c_idx]['creds_list'].append(creds.to_json())
-                database_channel[c_idx]['status'] = f"Connected 🟢 ({len(database_channel[c_idx]['creds_list'])} Keys)"
+                # Validasi creds yang ada, singkirkan token yang sudah mati / invalid
+                valid_creds = []
+                existing_list = database_channel[c_idx].get('creds_list', [database_channel[c_idx].get('creds_json', '')])
+                for cr_str in existing_list:
+                    if not cr_str: continue
+                    try:
+                        cr_obj = Credentials.from_authorized_user_info(json.loads(cr_str))
+                        if cr_obj.expired and cr_obj.refresh_token:
+                            cr_obj.refresh(Request())
+                        valid_creds.append(cr_str)
+                    except Exception:
+                        pass # Singkirkan key mati
+                
+                if new_cred_str not in valid_creds:
+                    valid_creds.append(new_cred_str)
+                database_channel[c_idx]['creds_list'] = valid_creds
+                database_channel[c_idx]['status'] = f"Connected 🟢 ({len(valid_creds)} Keys)"
+                database_channel[c_idx]['name'] = item['snippet']['title']
+                if item['snippet'].get('thumbnails', {}).get('default', {}).get('url'):
+                    database_channel[c_idx]['thumbnail'] = item['snippet']['thumbnails']['default']['url']
+
+            # Bersihkan notifikasi expired & cooldown channel ini
+            ch_name = item['snippet']['title'].lower()
+            with db_lock:
+                system_notifications = [n for n in system_notifications if ch_name not in n.get('msg', '').lower() and item['id'] not in n.get('msg', '')]
+            channel_cooldowns.pop(item['id'], None)
+
             save_channels(database_channel)
             return jsonify({"status": "success"})
         else:
@@ -3126,7 +3181,9 @@ def batch_create():
             "id": t_id, "yt_id": yt_id, "title": titles[i] if i < len(titles) else f"Auto Video #{i+1}",
             "publish_date": v_date.strftime('%Y-%m-%d %H:%M'),
             "mp3_per_video": data.get('mp3_per_video', 5), 
-            "bg_count": data.get('bg_count', 1), 
+            "bg_count": data.get('bg_count', 1),
+            # 🐛 FIX: Simpan locked_bg_files agar background yg dipilih user di preview dipakai saat render.
+            "locked_bg_files": data.get('locked_bg_files', []),
             "target_duration_hours": vid_duration,
             "vis_mode": data.get('vis_mode'), "vis_preset": data.get('vis_preset'),
             "vis_config": data.get('vis_config', {}), "vis_presets_allowed": data.get('vis_presets_allowed', []), "description": data.get('description', ''),

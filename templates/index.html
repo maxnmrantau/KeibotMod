@@ -559,6 +559,9 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
     <button onclick="go('channels', document.getElementById('nb-channels'))" class="btn btn-sm" style="background:#fff; color:#ff0055; font-weight:800; flex-shrink:0; font-size:10px; padding:4px 10px; border-radius:4px; border:none; cursor:pointer;">
       🔗 TAUTKAN ULANG
     </button>
+    <button onclick="dismissExpiredTicker()" class="btn btn-sm" style="background:rgba(0,0,0,0.45); color:#fff; font-weight:700; flex-shrink:0; font-size:11px; padding:4px 10px; border-radius:4px; border:1px solid rgba(255,255,255,0.35); cursor:pointer;" title="Bersihkan Peringatan">
+      ✕ Tutup
+    </button>
   </div>
 
   <div class="content">
@@ -1099,6 +1102,16 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
                 <img id="preview_bg_img" class="preview-bg-img" alt="Preview Background">
                 <div class="preview-overlay"></div>
                 <canvas id="preset_canvas"></canvas>
+            </div>
+
+            <!-- 🎨 BG PICKER: Kontrol Pilih & Kunci Background untuk Render -->
+            <div id="bg-picker-wrap" style="display:none; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:10px; gap:8px; flex-wrap:wrap; align-items:center;">
+              <span style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.08em;">🖼️ BACKGROUND PREVIEW</span>
+              <span id="bg-picker-name" style="font-size:11px;font-weight:600;color:var(--accent);flex:1;min-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</span>
+              <span id="bg-picker-counter" style="font-size:10px;color:var(--muted);">0/0</span>
+              <button onclick="cycleBgPreview(-1)" title="Background Sebelumnya" style="padding:4px 9px;font-size:13px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;">‹</button>
+              <button onclick="cycleBgPreview(1)" title="Background Berikutnya" style="padding:4px 9px;font-size:13px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;">›</button>
+              <button id="bg-lock-btn" onclick="toggleBgLock()" title="Kunci/Buka kunci background ini untuk render" style="padding:4px 10px;font-size:10px;font-weight:700;border-radius:6px;border:1px solid rgba(0,212,255,.3);background:rgba(0,212,255,.08);color:var(--accent);cursor:pointer;">🔓 Acak</button>
             </div>
 
             <div class="g3" style="margin-bottom:8px">
@@ -1676,6 +1689,17 @@ function toast(msg, type = 'info') {
 // ────────────────────────────────────────────────────────
 //  NOTIFICATIONS & TICKER EXPIRED TOKEN
 // ────────────────────────────────────────────────────────
+let tickerDismissed = false;
+
+function dismissExpiredTicker() {
+  tickerDismissed = true;
+  const ticker = document.getElementById('api-expired-ticker');
+  if (ticker) ticker.style.display = 'none';
+  fetch('/api/notifications/clear', {method: 'POST'}).then(() => {
+    toast('Peringatan disembunyikan & dibersihkan', 'info');
+  }).catch(() => {});
+}
+
 function fetchNotifs() {
   fetch('/api/notifications').then(r => r.json()).then(data => {
       const badge = document.getElementById('notif-badge');
@@ -1719,7 +1743,7 @@ function fetchNotifs() {
       }
 
       if (ticker) {
-        if (hasExpired) {
+        if (hasExpired && !tickerDismissed) {
           ticker.style.display = 'flex';
           if (marquee && expiredMsg) marquee.textContent = expiredMsg;
         } else {
@@ -2462,6 +2486,9 @@ function processBatch() {
     count: count,
     mp3_per_video: parseInt(document.getElementById('bc-mp3-count').value) || 5,
     bg_count: parseInt(document.getElementById('bc-bg-count').value) || 1,
+    // 🐛 FIX: Kirim locked_bg_files agar render memakai background yang sama dengan preview.
+    // Jika user mengunci background (🔒), hanya file itu yang dipakai. Jika tidak, backend tetap acak.
+    locked_bg_files: getLockedBgFiles(),
     target_duration_hours: target_durations_hours[0],
     target_durations_array: target_durations_hours,
     interval_days: interval,
@@ -2825,14 +2852,93 @@ function onEffectTypeChange() {
   }
 }
 
+// ── BG PICKER STATE ──
+let _bgPickerYtId = '';
+let _bgPickerIdx = 0;
+let _bgLocked = false;  // true = pakai bg tertentu saat render (bukan acak)
+
 function updatePreviewBackground(yt_id) {
   const bgVid = document.getElementById('preview_bg_vid'); const bgImg = document.getElementById('preview_bg_img');
+  const pickerWrap = document.getElementById('bg-picker-wrap');
   if (!bgVid || !bgImg) return;
-  if (!yt_id || !galleryData.background || !galleryData.background.length) { bgVid.style.display = 'none'; bgImg.style.display = 'none'; return; }
-  const bgFiles = galleryData.background; const randBg = bgFiles[Math.floor(Math.random() * bgFiles.length)].name;
-  const ext = randBg.split('.').pop().toLowerCase(); const url = `/uploads/${yt_id}/backgrounds/${randBg}`;
-  if (['mp4', 'webm', 'mov'].includes(ext)) { bgImg.style.display = 'none'; bgVid.src = url; bgVid.style.display = 'block'; bgVid.play().catch(() => {}); } 
-  else { bgVid.style.display = 'none'; bgImg.src = url; bgImg.style.display = 'block'; }
+  if (!yt_id || !galleryData.background || !galleryData.background.length) {
+    bgVid.style.display = 'none'; bgImg.style.display = 'none';
+    if (pickerWrap) pickerWrap.style.display = 'none';
+    return;
+  }
+  // Reset picker state saat channel diganti
+  if (yt_id !== _bgPickerYtId) {
+    _bgPickerYtId = yt_id;
+    _bgPickerIdx = 0;
+    _bgLocked = false;
+    _updateBgLockBtn();
+  }
+  _showBgAtIndex(_bgPickerIdx);
+  if (pickerWrap) pickerWrap.style.display = 'flex';
+}
+
+function _showBgAtIndex(idx) {
+  const bgFiles = galleryData.background;
+  if (!bgFiles || !bgFiles.length) return;
+  _bgPickerIdx = ((idx % bgFiles.length) + bgFiles.length) % bgFiles.length;
+  const yt_id = _bgPickerYtId;
+  const bgName = bgFiles[_bgPickerIdx].name;
+  const ext = bgName.split('.').pop().toLowerCase();
+  const url = `/uploads/${yt_id}/backgrounds/${bgName}`;
+  const bgVid = document.getElementById('preview_bg_vid');
+  const bgImg = document.getElementById('preview_bg_img');
+  const nameEl = document.getElementById('bg-picker-name');
+  const counterEl = document.getElementById('bg-picker-counter');
+  if (nameEl) nameEl.textContent = bgName;
+  if (counterEl) counterEl.textContent = `${_bgPickerIdx + 1}/${bgFiles.length}`;
+  if (['mp4', 'webm', 'mov'].includes(ext)) {
+    bgImg.style.display = 'none'; bgVid.src = url; bgVid.style.display = 'block'; bgVid.play().catch(() => {});
+  } else {
+    bgVid.style.display = 'none'; bgImg.src = url; bgImg.style.display = 'block';
+  }
+}
+
+function cycleBgPreview(dir) {
+  if (!galleryData.background || !galleryData.background.length) return;
+  _showBgAtIndex(_bgPickerIdx + dir);
+  // Jika sebelumnya locked, tetap locked ke file yang baru
+  _updateBgLockBtn();
+}
+
+function toggleBgLock() {
+  _bgLocked = !_bgLocked;
+  _updateBgLockBtn();
+  const bgName = galleryData.background && galleryData.background.length ? galleryData.background[_bgPickerIdx].name : '';
+  if (_bgLocked) {
+    toast(`🔒 Background dikunci: ${bgName}`, 'success');
+  } else {
+    toast('🔓 Background kembali ke mode Acak', 'info');
+  }
+}
+
+function _updateBgLockBtn() {
+  const btn = document.getElementById('bg-lock-btn');
+  if (!btn) return;
+  if (_bgLocked) {
+    btn.textContent = '🔒 Terkunci';
+    btn.style.background = 'rgba(0,232,135,.15)';
+    btn.style.borderColor = 'rgba(0,232,135,.4)';
+    btn.style.color = 'var(--green)';
+  } else {
+    btn.textContent = '🔓 Acak';
+    btn.style.background = 'rgba(0,212,255,.08)';
+    btn.style.borderColor = 'rgba(0,212,255,.3)';
+    btn.style.color = 'var(--accent)';
+  }
+}
+
+// Kembalikan list nama background yang akan dipakai saat render
+// Jika locked, kembalikan file saat ini (1 file). Jika tidak, kembalikan [] (backend random)
+function getLockedBgFiles() {
+  if (!_bgLocked) return [];
+  const bgFiles = galleryData.background;
+  if (!bgFiles || !bgFiles.length) return [];
+  return [bgFiles[_bgPickerIdx].name];
 }
 
 // ════════ PLAYLIST PREVIEW STATE & FUNCTIONS ════════
