@@ -3146,6 +3146,11 @@ def upload_gallery():
     if saved == 0:
         return jsonify({"status": "error", "message": "Tidak ada file yang berhasil disimpan. " + "; ".join(errors)}), 500
 
+    # FIX cache audio basi: get_audio_info menyimpan durasi 5 menit; upload
+    # baru tidak terlihat sampai cache kedaluwarsa. Hapus entri channel ini.
+    if folder_name == 'audios':
+        _audio_info_cache.pop(yt_id, None)
+
     msg = f"{saved} file berhasil diupload ke '{folder_name}'"
     if errors:
         msg += f" ({len(errors)} gagal: {'; '.join(errors[:3])})"
@@ -3162,6 +3167,10 @@ def delete_gallery_file():
 
     if os.path.exists(path):
         os.remove(path)
+        # FIX cache audio basi: hapus entri channel ini supaya get_audio_info
+        # membaca ulang daftar file (bukan data 5 menit lalu).
+        if folder_name == 'audios':
+            _audio_info_cache.pop(yt_id, None)
         return jsonify({"status": "success", "message": "File dihapus!"})
     return jsonify({"status": "error", "message": f"File tidak ditemukan: {path}"})
 
