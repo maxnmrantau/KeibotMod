@@ -1404,13 +1404,8 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
             <div class="fg" style="margin-bottom:0"><label class="fl">Folder Audio (Drive)</label><input type="text" id="dr-folder-audios" placeholder="ID folder Drive — kosong = tidak dipakai"></div>
             <div class="fg" style="margin-bottom:0"><label class="fl">Folder Background (Drive)</label><input type="text" id="dr-folder-backgrounds" placeholder="ID folder Drive"></div>
             <div class="fg" style="margin-bottom:0"><label class="fl">Folder Thumbnail (Drive)</label><input type="text" id="dr-folder-thumbnails" placeholder="ID folder Drive"></div>
-            <div class="fg" style="margin-bottom:0"><label class="fl">Folder Arsip Render (Drive)</label><input type="text" id="dr-folder-renders" placeholder="ID folder Drive (opsional)"></div>
             <div class="fg" style="margin-bottom:0"><label class="fl">Batas disk bebas (GB)</label><input type="number" id="dr-free-threshold" step="0.5" min="0.5" max="50"></div>
             <div class="fg" style="margin-bottom:0"><label class="fl">Batas disk terpakai (%)</label><input type="number" id="dr-usage-threshold" step="1" min="50" max="99"></div>
-          </div>
-          <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
-            <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="dr-upload-renders" style="width:16px;height:16px;accent-color:var(--accent);"> Arsipkan hasil render (tujuan VPS) ke folder Drive</label>
-            <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="dr-delete-after" style="width:16px;height:16px;accent-color:var(--accent);"> Hapus file lokal setelah berhasil diarsipkan ke Drive</label>
           </div>
           <div style="margin-top:14px"><button class="btn btn-p" onclick="saveDriveConfig()">💾 SIMPAN KONFIGURASI DRIVE</button></div>
           <div id="dr-save-result" style="margin-top:10px;font-size:11px;"></div>
@@ -1766,13 +1761,6 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
           </div>
 
           <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
-            <strong style="font-size:13px; color:var(--accent); display:block; margin-bottom:6px;">📁 Arsip Render ke Drive (Opsional)</strong>
-            <p style="color:var(--text2); font-size:11.5px;">
-              Centang <b>Arsipkan hasil render ke folder Drive</b> untuk mengunggah video hasil render (tujuan VPS) ke folder Drive. Kalau dicentang juga <b>Hapus file lokal setelah berhasil diarsipkan</b>, file lokal dihapus dan tautan unduhan di riwayat mengarah ke Drive — disk VPS jadi lega. Opsi ini hanya berlaku untuk render dengan tujuan VPS.
-            </p>
-          </div>
-
-          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
             <strong style="font-size:13px; color:var(--yellow); display:block; margin-bottom:6px;">🔐 Token &amp; Keamanan</strong>
             <p style="color:var(--text2); font-size:11.5px;">
               Token Drive tersimpan di file <code>/root/keibotmod/drive_token.json</code> di VPS (hanya bisa dibaca root) dan <b>tidak pernah masuk GitHub</b> maupun ditampilkan di panel.<br>
@@ -2080,12 +2068,8 @@ function loadDrivePanel() {
     setVal('dr-folder-audios', cfg.folder_audios);
     setVal('dr-folder-backgrounds', cfg.folder_backgrounds);
     setVal('dr-folder-thumbnails', cfg.folder_thumbnails);
-    setVal('dr-folder-renders', cfg.folder_renders);
     setVal('dr-free-threshold', cfg.free_gb_threshold);
     setVal('dr-usage-threshold', cfg.usage_pct_threshold);
-    const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
-    setChk('dr-upload-renders', cfg.upload_renders);
-    setChk('dr-delete-after', cfg.delete_after_upload);
   }).catch(() => {
     if (badge) { badge.textContent = 'GAGAL MEMUAT'; badge.className = 'pill p-red'; }
   });
@@ -2094,16 +2078,12 @@ function loadDrivePanel() {
 function saveDriveConfig() {
   const box = document.getElementById('dr-save-result');
   const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  const chk = id => { const el = document.getElementById(id); return el ? el.checked : false; };
   const body = {
     folder_audios: val('dr-folder-audios'),
     folder_backgrounds: val('dr-folder-backgrounds'),
     folder_thumbnails: val('dr-folder-thumbnails'),
-    folder_renders: val('dr-folder-renders'),
     free_gb_threshold: parseFloat(val('dr-free-threshold')),
-    usage_pct_threshold: parseFloat(val('dr-usage-threshold')),
-    upload_renders: chk('dr-upload-renders'),
-    delete_after_upload: chk('dr-delete-after')
+    usage_pct_threshold: parseFloat(val('dr-usage-threshold'))
   };
   if (box) box.innerHTML = '<span style="color:var(--muted)">⏳ Menyimpan...</span>';
   fetch('/api/panel_drive_save', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
