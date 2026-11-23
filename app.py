@@ -404,10 +404,29 @@ def restore_and_resume_queue():
     """Memulihkan antrean yang belum selesai jika server restart/reboot/crash"""
     global active_tasks, history_tasks
     resumed = 0
+    done_ids = set()
     with db_lock:
         for t in active_tasks:
             bp = t.get('blueprint')
             if bp:
+                # FIX duplikat: video sudah terunggah sebelum restart
+                # (video_id tersimpan saat insert berhasil) — jangan render
+                # dan unggah ulang; tandai sudah tayang.
+                if t.get('video_id'):
+                    vid = t['video_id']
+                    now = time.time()
+                    start_ts = t.get('start_ts')
+                    if start_ts:
+                        el = max(0, int(now - start_ts))
+                        t['duration'] = f"{el // 60}m {el % 60}s" if el >= 60 else f"{el}s"
+                    else:
+                        t['duration'] = "—"
+                    t['finish_time'] = dt.datetime.now().strftime('%H:%M:%S')
+                    t['status'] = f"Tayang! ✅ <a href='https://youtu.be/{vid}' target='_blank'>[Lihat]</a>"
+                    t.pop('blueprint', None)
+                    history_tasks.insert(0, t)
+                    done_ids.add(t['id'])
+                    continue
                 # Jika server restart saat task sedang dalam proses render/upload, kembalikan ke antrean
                 st = t.get('status', '')
                 if st != "In Factory Queue ⚙️":
@@ -421,8 +440,9 @@ def restore_and_resume_queue():
                 if t.get('status') == "In Factory Queue ⚙️" or "Rendering" in t.get('status', ''):
                     t['status'] = "Dibatalkan (Server Restart) ⚠️"
                     history_tasks.insert(0, t)
+                    done_ids.add(t['id'])
 
-        active_tasks = [t for t in active_tasks if "Dibatalkan" not in t.get('status', '')]
+        active_tasks = [t for t in active_tasks if "Dibatalkan" not in t.get('status', '') and t['id'] not in done_ids]
     save_tasks_db()
     if resumed > 0:
         print(f"[KeiBot] 🔄 Berhasil memulihkan {resumed} task ke antrean setelah restart!")
@@ -2576,7 +2596,15 @@ def background_worker():
                                 time.sleep(10)
                         
                         video_id = resp.get('id')
-                        
+                        # FIX duplikat: simpan video_id SEGERA setelah insert
+                        # berhasil, supaya restart di tengah thumbnail/playlist
+                        # tidak mengunggah ulang video yang sama.
+                        with db_lock:
+                            for d in active_tasks:
+                                if d['id'] == task_id:
+                                    d['video_id'] = video_id
+                        save_tasks_db()
+
                         thumb_path = get_and_consume_thumbnail(yt_id)
                         if thumb_path and os.path.exists(thumb_path):
                             try:
