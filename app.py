@@ -3333,5 +3333,79 @@ try:
 except Exception as _agent_api_err:
     print(f"⚠️ Agent API tidak dimuat: {_agent_api_err}")
 
+# ── Panel "API Agen" (login PIN, tanpa API key) ─────────────────────
+# Jalur ini KHUSUS untuk halaman panel web — data status yang sama
+# dengan Agent API, tapi lewat sesi login PIN, jadi browser tidak
+# pernah menerima atau mengirim API key. Kunci tidak pernah
+# disertakan dalam respons apa pun di sini.
+def _panel_agent_summary():
+    """Ringkasan status Agent API + antrean, dihitung in-process
+    (tanpa HTTP self-call — server Flask berjalan single-thread)."""
+    active = active_tasks
+    history = history_tasks
+    queued = sum(1 for t in active
+                 if str(t.get("status", "")).startswith("In Factory Queue"))
+    uploaded = sum(1 for t in history
+                   if str(t.get("status", "")).startswith("Tayang"))
+    failed = sum(1 for t in history if "Gagal" in str(t.get("status", "")))
+    yt_connected = any("Connected" in str(c.get("status", ""))
+                       for c in database_channel)
+    ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+    ffmpeg_ok = bool(ffmpeg and os.path.exists(ffmpeg))
+    try:
+        import agent_api as _aa
+        _started = getattr(_aa, "_STARTED", None)
+    except Exception:
+        _started = None
+    return {
+        "api_active": bool(os.environ.get("KEIBOT_AGENT_KEY", "")),
+        "blueprint_loaded": "agent_api" in app.blueprints,
+        "ffmpeg": ffmpeg_ok,
+        "ffmpeg_path": ffmpeg if ffmpeg_ok else None,
+        "uptime_seconds": int(time.time() - _started) if _started else None,
+        "queue_size": render_queue.qsize(),
+        "counts": {
+            "batches_active": len(active),
+            "queued": queued,
+            "rendering_or_uploading": len(active) - queued,
+            "uploaded": uploaded,
+            "failed": failed,
+            "history_total": len(history),
+            "channels": len(database_channel),
+        },
+        "youtube_connected": yt_connected,
+    }
+
+
+@app.route('/api/panel_agent_status', methods=['GET'])
+def panel_agent_status():
+    return jsonify({"status": "ok", **_panel_agent_summary()})
+
+
+@app.route('/api/panel_agent_test', methods=['POST'])
+def panel_agent_test():
+    """Tes koneksi Agent API dari sisi server: periksa key terpasang,
+    blueprint terdaftar, dan ffmpeg — tanpa key keluar dari server."""
+    s = _panel_agent_summary()
+    checks = [
+        {"name": "Kunci API terpasang", "ok": s["api_active"],
+         "detail": "KEIBOT_AGENT_KEY ada di environment" if s["api_active"]
+                   else "KEIBOT_AGENT_KEY kosong — endpoint Agent API menjawab 503"},
+        {"name": "Blueprint Agent API terdaftar", "ok": s["blueprint_loaded"],
+         "detail": "Blueprint /api/agent/* aktif" if s["blueprint_loaded"]
+                   else "Blueprint tidak termuat — periksa log service"},
+        {"name": "FFmpeg tersedia", "ok": s["ffmpeg"],
+         "detail": s["ffmpeg_path"] or "ffmpeg tidak ditemukan"},
+        {"name": "Antrean render", "ok": True,
+         "detail": f"{s['queue_size']} job dalam antrean"},
+    ]
+    all_ok = all(c["ok"] for c in checks)
+    return jsonify({"status": "ok" if all_ok else "error",
+                    "result": "OK — Agent API siap dipakai" if all_ok
+                              else "Ada pemeriksaan yang gagal (lihat detail)",
+                    "checks": checks,
+                    "uptime_seconds": s["uptime_seconds"],
+                    "youtube_connected": s["youtube_connected"]})
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
