@@ -2865,8 +2865,13 @@ function onIntervalChange() {
 
 function getIntervalDays() {
   const sel = document.getElementById('bc-interval').value;
-  if (sel === 'custom') return parseFloat(document.getElementById('bc-custom-interval').value) || 1;
-  return parseFloat(sel);
+  const v = sel === 'custom'
+    ? parseFloat(document.getElementById('bc-custom-interval').value)
+    : parseFloat(sel);
+  // FIX: interval negatif/nol menjadwalkan semua video di masa lalu (langsung
+  // ter-upload). Nilai tidak valid atau <= 0 -> kembali ke 1 hari.
+  if (!isFinite(v) || v <= 0) return 1;
+  return v;
 }
 
 function updateBatchPreview() {
