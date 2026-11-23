@@ -265,7 +265,10 @@ def setup():
         elif pin != pin2: error = "PIN tidak cocok!"
         else:
             new_secret = secrets.token_hex(24)
-            with open(CONFIG_FILE, 'w') as f: json.dump({"admin_pin": pin, "secret_key": new_secret}, f, indent=4)
+            # FIX: tulis config.json di bawah db_lock (baca-ubah-tulis) supaya
+            # tidak balapan dengan save_drive_config / tulis config lainnya.
+            with db_lock:
+                with open(CONFIG_FILE, 'w') as f: json.dump({"admin_pin": pin, "secret_key": new_secret}, f, indent=4)
             app.secret_key = new_secret; session['logged_in'] = True
             return redirect(url_for('index'))
     return render_template('setup.html', error=error)
