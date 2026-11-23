@@ -2079,11 +2079,30 @@ def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg)
     try: proc.stdin.close()
     except: pass
     proc.wait()
+    # FIX: periksa exit code ffmpeg + validitas file hasil — dulu diabaikan,
+    # sehingga video rusak/terpotong bisa terunggah sebagai "sukses".
+    _render_err = None
+    if proc.returncode != 0:
+        _render_err = f"FFmpeg gagal (exit code {proc.returncode}) — video tidak lengkap"
+    elif not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        _render_err = "FFmpeg selesai tapi file video tidak ditemukan/kosong"
+    else:
+        try:
+            _probe = subprocess.run([get_ffprobe_path(), '-v', 'error', '-show_entries', 'format=duration',
+                                     '-of', 'default=noprint_wrappers=1:nokey=1', output_path],
+                                    capture_output=True, text=True, timeout=30)
+            if _probe.returncode == 0 and _probe.stdout.strip():
+                if float(_probe.stdout.strip()) <= 0:
+                    _render_err = "FFmpeg selesai tapi durasi video tidak valid (0 detik)"
+        except Exception:
+            pass  # ffprobe tidak tersedia — lanjutkan, exit code sudah diperiksa
     bg.close()
     try:
         del audio; del bg; del vis
     except: pass
     gc.collect()
+    if _render_err:
+        raise Exception(_render_err)
 
 # ==========================================
 # 🚀 BACKGROUND WORKER: OTO-LOOP ULTIMATE
