@@ -2684,7 +2684,21 @@ def background_worker():
                                     os.remove(thumb_path)
                                 except Exception:
                                     pass
-                            except: pass
+                            except Exception as thumb_err:
+                                # FIX: dulu kegagalan thumbnail ditelan diam-diam
+                                # (except: pass) dan file-nya tetap ada, sehingga
+                                # video BERIKUTNYA diam-diam memakai thumbnail
+                                # video ini. Sekarang: beri notifikasi + pindah
+                                # file gagal ke .FAILED supaya tidak dipakai ulang.
+                                print(f"[KeiBot] Thumbnail gagal untuk video {video_id}: {thumb_err}")
+                                thumb_msg = f"⚠️ Thumbnail video '{task.get('title', video_id)}' GAGAL dipasang ({thumb_err}). File dipindah ke .FAILED."
+                                with db_lock:
+                                    if not any(n.get('msg') == thumb_msg for n in system_notifications):
+                                        system_notifications.append({"msg": thumb_msg, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
+                                try:
+                                    os.rename(thumb_path, thumb_path + ".FAILED")
+                                except Exception:
+                                    pass
                                 
                         try:
                             if task.get('playlist_id'):
