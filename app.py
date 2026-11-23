@@ -2628,7 +2628,9 @@ def background_worker():
                         if "invalid_grant" in err_str or "expired" in err_str or "revoked" in err_str:
                             pesan_error = "Sesi Kedaluwarsa (Tautkan Ulang!)"
                             channel_cooldowns[yt_id] = time.time() + (3600 * 24)
-                            ch_name = ch_data.get('name', 'Unknown')
+                            # FIX: variabel sebelumnya 'ch_data' tidak pernah didefinisikan (NameError);
+                            # yang ada di scope adalah 'channel_data' (bisa None bila channel dihapus).
+                            ch_name = (channel_data or {}).get('name', 'Unknown')
                             exp_msg = f"⚠️ Token API Channel '{ch_name}' EXPIRED! Silakan tautkan ulang channel."
                             with db_lock:
                                 if not any(n.get('msg') == exp_msg for n in system_notifications):
