@@ -486,7 +486,17 @@ def restore_and_resume_queue():
         print(f"[KeiBot] 🔄 Berhasil memulihkan {resumed} task ke antrean setelah restart!")
 
 def get_fresh_credentials(channel_data):
-    creds_str = channel_data.get('creds_list', [channel_data.get('creds_json')])[0]
+    # FIX: dulu channel_data.get('creds_list', [...])[0] melempar IndexError
+    # kalau creds_list ada tapi KOSONG (atau berisi None/string kosong).
+    # Sekarang: pesan jelas yang menyebut nama channel.
+    ch_name = (channel_data or {}).get('name', 'Unknown')
+    creds_list = (channel_data or {}).get('creds_list')
+    if not creds_list:
+        fallback = (channel_data or {}).get('creds_json')
+        creds_list = [fallback] if fallback else []
+    if not creds_list or not creds_list[0]:
+        raise ValueError(f"Channel '{ch_name}' tidak punya kredensial YouTube — tautkan ulang channel di panel.")
+    creds_str = creds_list[0]
     creds = Credentials.from_authorized_user_info(json.loads(creds_str))
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
