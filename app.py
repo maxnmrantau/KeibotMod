@@ -217,6 +217,13 @@ def get_system_stats():
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'))
+# FIX batas upload galeri: dulu tanpa batas apa pun — file raksasa/tipe apa
+# pun bisa di-upload sampai disk VPS penuh. 500 MB per permintaan.
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
+
+@app.errorhandler(413)
+def _request_too_large(_e):
+    return jsonify({"status": "error", "message": "File terlalu besar (maks 500 MB per permintaan)"}), 413
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
@@ -299,6 +306,16 @@ GALLERY_FOLDER_MAP = {
     'backgrounds':'backgrounds',
     'thumbnail':  'thumbnails',
     'thumbnails': 'thumbnails'
+}
+
+# FIX whitelist ekstensi galeri — selaras dengan yang dipakai pemilih file
+# saat render (get_all_audios: mp3/wav; get_multi_backgrounds: mp4/jpg/
+# jpeg/png/gif/webp/mov; get_and_consume_thumbnail: jpg/png/jpeg). File di
+# luar daftar ditolak, jadi tidak ada file "sampah" yang tak pernah terpakai.
+GALLERY_ALLOWED_EXT = {
+    'audios':      {'.mp3', '.wav'},
+    'backgrounds': {'.mp4', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.mov'},
+    'thumbnails':  {'.jpg', '.jpeg', '.png'},
 }
 
 def resolve_folder(g_type: str) -> str:
@@ -3043,6 +3060,8 @@ def upload_gallery():
         return jsonify({"status": "error", "message": "yt_id tidak boleh kosong!"}), 400
     if not g_type:
         return jsonify({"status": "error", "message": "type tidak boleh kosong!"}), 400
+    if g_type.lower() not in GALLERY_FOLDER_MAP:
+        return jsonify({"status": "error", "message": f"type '{g_type}' tidak dikenal (audio/background/thumbnail)!"}), 400
 
     folder_name = resolve_folder(g_type)
     folder      = get_channel_folder(yt_id, folder_name)
@@ -3061,6 +3080,11 @@ def upload_gallery():
             continue
         try:
             safe_name = os.path.basename(f.filename)
+            ext = os.path.splitext(safe_name)[1].lower()
+            allowed = GALLERY_ALLOWED_EXT.get(folder_name, set())
+            if ext not in allowed:
+                errors.append(f"{f.filename}: tipe file tidak diizinkan untuk '{folder_name}' (diizinkan: {', '.join(sorted(allowed))})")
+                continue
             dest = os.path.join(folder, safe_name)
             f.save(dest)
             if os.path.getsize(dest) == 0:
