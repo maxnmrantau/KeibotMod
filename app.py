@@ -3347,6 +3347,11 @@ def requeue_task(task_id):
                 bp = t.get('blueprint')
                 if not bp:
                     return {"status": "error", "error": "Task ini tidak punya blueprint untuk diantre ulang"}, 409
+                # FIX duplikat: tolak bila blueprint masih menunggu di antrean
+                # (status antrean = blueprint sudah ada di render_queue).
+                st = str(t.get('status', ''))
+                if st.startswith('In Factory Queue') or 'Antrean Ditunda' in st or 'Antre Ulang' in st:
+                    return {"status": "error", "error": "Task sudah ada di antrean render/upload"}, 409
                 t['status'] = "In Factory Queue ⚙️"
                 t.pop('start_ts', None)
                 t.pop('render_start', None)
