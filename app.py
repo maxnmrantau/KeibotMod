@@ -3633,12 +3633,17 @@ def get_logs():
 
 @app.route('/api/clear_logs', methods=['POST'])
 def clear_logs():
-    try:
-        subprocess.run(['journalctl', '--rotate', '-u', 'keibot'], capture_output=True, timeout=5)
-        subprocess.run(['journalctl', '--vacuum-time=1s', '-u', 'keibot'], capture_output=True, timeout=5)
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)[:50]})
+    # FIX: DULU endpoint ini menjalankan
+    #   journalctl --rotate -u keibot
+    #   journalctl --vacuum-time=1s -u keibot
+    # dan itu BERBAHAYA: menurut man journalctl(1), --vacuum-time menghapus
+    # FILE jurnal arsip (bukan entri per-unit) dan -u HANYA filter tampilan
+    # — vacuum TIDAK menghormati -u. Ditambah --rotate, perintah itu
+    # menghapus SELURUH riwayat jurnal sistem (SSH, kernel, service lain),
+    # bukan cuma log Keibot. journald memang tidak punya cara menghapus log
+    # per-unit, jadi vacuum dihapus total; endpoint menolak dengan jelas.
+    return jsonify({"status": "error",
+                    "error": "Log Keibot tidak bisa dihapus terpisah — jurnal sistem tidak mendukung hapus per-unit (vacuum akan menghapus seluruh jurnal sistem)."}), 400
 
 # ── Agent API (X-API-Key, tanpa login PIN) ─────────────────────────
 # Blueprint di agent_api.py; dependensi diinjeksikan agar modul itu
