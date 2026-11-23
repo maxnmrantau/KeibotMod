@@ -1783,7 +1783,7 @@ class VisualEngine:
 
 def hex_to_rgb(h): return tuple(int(str(h).lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
 
-def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg):
+def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg, force_key_interval=0):
     # 🎨 Resolusi dinamis: baca dari cfg ('1080' atau '720'), fallback 720.
     _res = str(cfg.get('resolution', '720'))
     if _res == '1080':
@@ -1815,13 +1815,23 @@ def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg)
 
     ff_threads = str(max(1, min(4, os.cpu_count() or 2)))
     cmd = [
-        get_ffmpeg_path(), '-y', '-threads', ff_threads, 
-        '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', f'{w}x{h}', '-pix_fmt', 'bgr24', '-r', str(fps), 
-        '-i', '-', 
-        '-i', audio_path, 
+        get_ffmpeg_path(), '-y', '-threads', ff_threads,
+        '-f', 'rawvideo', '-vcodec', 'rawvideo', '-s', f'{w}x{h}', '-pix_fmt', 'bgr24', '-r', str(fps),
+        '-i', '-',
+        '-i', audio_path,
         '-t', str(duration),
-        '-c:v', 'libx264', '-preset', render_preset, '-crf', '22', '-pix_fmt', 'yuv420p', output_path
+        '-c:v', 'libx264', '-preset', render_preset, '-crf', '22', '-pix_fmt', 'yuv420p',
     ]
+    # FIX smart-cut: paksa keyframe di setiap kelipatan interval potong, supaya
+    # segmentasi -c copy sesudahnya memotong tepat di cut_duration (bukan di
+    # keyframe GOP ~8,3 dtk). Tanpa ini "potongan 5 dtk" jadinya ~8,3 dtk.
+    try:
+        _fk = float(force_key_interval or 0)
+    except (ValueError, TypeError):
+        _fk = 0.0
+    if _fk > 0:
+        cmd += ['-force_key_frames', f'expr:gte(t,n_forced*{_fk:g})']
+    cmd.append(output_path)
     
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
@@ -2379,7 +2389,13 @@ def background_worker():
                             d['status'] = f"Rendering Visual ({int(render_duration//60)}m {int(render_duration%60)}s)... ⚡"
             save_tasks_db()
 
-            render_video_core(task_id, base_audio, bg_paths, base_video, render_duration, preset)
+            # ── SMART CUT: keyframe di batas potong harus dipaksa saat render
+            # (lihat render_video_core) agar segmentasi -c copy memotong tepat
+            # di cut_duration, bukan di keyframe GOP.
+            _sc = task.get('smart_cut', False)
+            _cd = safe_float(task.get('cut_duration', 5), 5.0)
+            render_video_core(task_id, base_audio, bg_paths, base_video, render_duration, preset,
+                              force_key_interval=(_cd if _sc and _cd > 0 else 0))
             if stop_flags.get(task_id): raise Exception("Dibatalkan")
 
             # ── SMART CUT: potong & acak ulang chunk video ──
