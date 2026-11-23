@@ -3343,7 +3343,13 @@ def get_output_videos():
 def delete_output_video():
     name = request.json.get('name')
     if not name: return jsonify({"status": "error", "error": "Nama file diperlukan"})
-    fp = os.path.join(OUTPUT_DIR, name)
+    # FIX keamanan (path traversal): hanya nama file polos di dalam OUTPUT_DIR
+    if '/' in name or '\\' in name or '..' in name:
+        return jsonify({"status": "error", "error": "Nama file tidak valid"}), 400
+    out_real = os.path.realpath(OUTPUT_DIR)
+    fp = os.path.realpath(os.path.join(out_real, os.path.basename(name)))
+    if not fp.startswith(out_real + os.sep):
+        return jsonify({"status": "error", "error": "Nama file tidak valid"}), 400
     if os.path.exists(fp):
         os.remove(fp)
         return jsonify({"status": "success"})
