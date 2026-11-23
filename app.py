@@ -3373,7 +3373,12 @@ def poll_device_token():
             c_idx = next((i for i, c in enumerate(database_channel) if c['yt_id'] == item['id']), None)
             new_cred_str = creds.to_json()
             if c_idx is None:
-                new_c = {"id": len(database_channel)+1, "name": item['snippet']['title'], "yt_id": item['id'], "thumbnail": item['snippet']['thumbnails']['default']['url'], "status": "Connected 🟢 (1 Key)", "creds_list": [new_cred_str]}
+                # FIX: dulu id = len(database_channel)+1 — setelah hapus lalu
+                # tambah lagi, id baru bisa tabrakan dengan id yang masih ada
+                # (mis. [1,2,3] hapus 2 -> tambah baru dapat id 3 lagi).
+                _next_ch_id = max([c.get('id', 0) for c in database_channel
+                                   if isinstance(c.get('id'), int)] or [0]) + 1
+                new_c = {"id": _next_ch_id, "name": item['snippet']['title'], "yt_id": item['id'], "thumbnail": item['snippet']['thumbnails']['default']['url'], "status": "Connected 🟢 (1 Key)", "creds_list": [new_cred_str]}
                 database_channel.append(new_c)
             else:
                 # Validasi creds yang ada, singkirkan token yang sudah mati / invalid
