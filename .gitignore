@@ -12,3 +12,6 @@ keibot-output/
 static/final_*.mp4
 __pycache__/
 .venv/
+
+# Kunci API agen (jangan pernah di-commit)
+.agent.env
