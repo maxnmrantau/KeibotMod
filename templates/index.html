@@ -880,6 +880,7 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
           <div class="form-section">
             <div class="fs-title">📋 Preview Jadwal</div>
             <div style="font-family:var(--font-m);font-size:10px;color:var(--muted);margin-bottom:10px" id="sched-summary">–</div>
+            <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button type="button" class="btn btn-g btn-sm" onclick="reshuffleBatchTitles()">🔄 Acak ulang judul</button></div>
             <div class="sched-preview" id="sched-preview-list"><div style="padding:16px;text-align:center;color:var(--muted);font-family:var(--font-m);font-size:11px">Isi data di kiri untuk melihat preview jadwal.</div></div>
           </div>
         </div>
@@ -1234,7 +1235,7 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
             </div>
           </div>
 
-          <div style="font-family:var(--font-m);font-size:10px;color:var(--muted);margin-bottom:8px;letter-spacing:.1em">JADWAL LENGKAP</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-family:var(--font-m);font-size:10px;color:var(--muted);letter-spacing:.1em">JADWAL LENGKAP</div><button type="button" class="btn btn-g btn-sm" onclick="reshuffleBatchTitles()">🔄 Acak ulang judul</button></div>
           <div class="sched-preview" id="final-sched-list" style="max-height:300px;overflow-y:auto"></div>
         </div>
 
@@ -1829,6 +1830,58 @@ let currentTitleCh = '';
 function generateOneTitle(bank) {
   if (!bank || !bank.length) return "Video Baru";
   return bank[Math.floor(Math.random() * bank.length)];
+}
+
+// 🔑 FIX BUG JUDUL BERUBAH (23 Nov 2026): judul batch diacak SEKALI saja per
+// (channel, jumlah video, isi bank) — lalu dipakai di mana-mana. Sebelumnya
+// preview step 2, preview akhir step 4, dan submit masing-masing mengacak
+// sendiri-sendiri, sehingga judul yang dibuat beda dari preview yang dilihat.
+// Satu sumber kebenaran: batchTitles + batchTitlesSig + ensureBatchTitles().
+let batchTitles = [];      // judul hasil acakan sekali, index = video ke-i
+let batchTitlesSig = '';   // signature (channel|jumlah|isi bank) dari batchTitles
+
+function batchTitlesSignature(yt_id, count, bank) {
+  return yt_id + '|' + count + '|' + (bank || []).join('\u0001');
+}
+
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function drawBatchTitles(bank, count) {
+  if (!bank || !bank.length) return Array.from({ length: count }, (_, i) => `Video #${i + 1}`);
+  // Tanpa duplikat selama bank cukup: acak urutan, ambil berurutan.
+  // Bila jumlah video melebihi isi bank, putaran berikutnya diacak lagi.
+  const out = [];
+  let pool = [];
+  while (out.length < count) {
+    if (!pool.length) pool = shuffleArray([...bank]);
+    out.push(pool.pop());
+  }
+  return out;
+}
+
+function ensureBatchTitles() {
+  const yt_id = document.getElementById('bc-channel').value;
+  const count = parseInt(document.getElementById('bc-count').value) || 0;
+  const bank = titleBankData[yt_id] || [];
+  const sig = batchTitlesSignature(yt_id, count, bank);
+  if (sig !== batchTitlesSig) {
+    batchTitlesSig = sig;
+    batchTitles = drawBatchTitles(bank, count);
+  }
+  return batchTitles;
+}
+
+function reshuffleBatchTitles() {
+  batchTitlesSig = ''; // paksa acak ulang pada render berikutnya
+  updateBatchPreview();
+  buildFinalSchedule();
+  toast('🔄 Judul diacak ulang', 'success');
 }
 // ────────────────────────────────────────────────────────
 
@@ -2557,6 +2610,7 @@ function uploadTitleBank(event) {
     saveTitleBankToServer(ch);
     currentTitleCh = ch;
     renderTitleList(titleBankData[ch]);
+    updateBatchPreview();
     toast('Judul diimport', 'success');
   };
   reader.readAsText(file);
@@ -2573,6 +2627,7 @@ function addManualTitle() {
   inp.value = '';
   saveTitleBankToServer(currentTitleCh);
   renderTitleList(titleBankData[currentTitleCh]);
+  updateBatchPreview();
   toast('Judul ditambahkan', 'success');
 }
 
@@ -2581,6 +2636,7 @@ function deleteTitle(idx) {
   titleBankData[currentTitleCh].splice(idx, 1);
   saveTitleBankToServer(currentTitleCh);
   renderTitleList(titleBankData[currentTitleCh]);
+  updateBatchPreview();
 }
 
 function clearTitleBank() {
@@ -2589,6 +2645,7 @@ function clearTitleBank() {
   titleBankData[currentTitleCh] = [];
   saveTitleBankToServer(currentTitleCh);
   renderTitleList([]);
+  updateBatchPreview();
 }
 
 function saveTitleBankToServer(ch) {
@@ -2822,7 +2879,6 @@ function updateBatchPreview() {
   const startDate = new Date(startRaw);
   if (isNaN(startDate.getTime())) return;
 
-  const bank = titleBankData[yt_id] || [];
   const items = [];
   
   const targetSel = document.getElementById('bc-target-duration').value;
@@ -2840,7 +2896,7 @@ function updateBatchPreview() {
 
   for (let i = 0; i < Math.min(count, 8); i++) {
     const d = new Date(startDate.getTime() + i * interval * 86400000);
-    const title = bank.length ? generateOneTitle(bank) : `Video #${i + 1}`;
+    const title = ensureBatchTitles()[i];
     items.push({ num: i + 1, title, date: d });
   }
 
@@ -2882,9 +2938,6 @@ function buildFinalSchedule() {
   const interval = getIntervalDays();
   const startDate = new Date(startRaw);
   if (isNaN(startDate.getTime())) return;
-  const yt_id = document.getElementById('bc-channel').value;
-  const bank = titleBankData[yt_id] || [];
-
   document.getElementById('sum-count').textContent = count;
   if(document.getElementById('sum-duration')) document.getElementById('sum-duration').textContent = target_text;
   
@@ -2899,9 +2952,10 @@ function buildFinalSchedule() {
     if (checks.length > 0) visInfo = `Acak (${checks.length} Preset)`;
   }
 
+  const titles = ensureBatchTitles();
   const items = Array.from({ length: count }, (_, i) => {
     const d = new Date(startDate.getTime() + i * interval * 86400000);
-    return { num: i + 1, title: generateOneTitle(bank), date: d };
+    return { num: i + 1, title: titles[i] || `Video #${i + 1}`, date: d };
   });
 
   document.getElementById('final-sched-list').innerHTML = items.map(item => `
@@ -2944,7 +2998,6 @@ function processBatch() {
   }
 
   const interval = getIntervalDays();
-  const bank = titleBankData[yt_id] || [];
   const visMode = document.getElementById('bc-vis-mode').value;
 
   let selectedPresets = [];
@@ -2953,7 +3006,7 @@ function processBatch() {
     if (selectedPresets.length === 0) { toast('Pilih minimal 1 Preset untuk mode Random!', 'warn'); return; }
   }
 
-  const generated_titles = Array.from({ length: count }, () => generateOneTitle(bank));
+  const generated_titles = ensureBatchTitles();
   const floatingCb = document.getElementById('bc-use-floating-card');
   const is_floating = floatingCb ? floatingCb.checked : false;
 
