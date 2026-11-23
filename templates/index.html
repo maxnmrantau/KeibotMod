@@ -483,6 +483,8 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
     <button class="nav-item" onclick="go('batch',this)" id="nb-batch"><span class="nav-icon">◉</span> Batch Creator</button>
     <div class="nav-section">MONITOR</div>
     <button class="nav-item" onclick="go('logs',this)" id="nb-logs"><span class="nav-icon">📋</span> Logs</button>
+    <div class="nav-section">INTEGRASI</div>
+    <button class="nav-item" onclick="go('agentapi',this)" id="nb-agentapi"><span class="nav-icon">🔑</span> API Agen</button>
     <div class="nav-section">SYSTEM</div>
     <button class="nav-item" onclick="go('settings',this)" id="nb-settings"><span class="nav-icon">◎</span> Settings</button>
   </nav>
@@ -1304,6 +1306,83 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
       <div id="channels-grid"></div>
     </div>
 
+    <div id="panel-agentapi" class="panel">
+      <div class="sh" style="margin-bottom:20px">
+        <div><div class="sh-title">🔑 API Agen</div><div class="sh-sub">Jalur akses agen AI (Max) — status, endpoint & tes koneksi</div></div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-g btn-sm" onclick="loadAgentApiPanel()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">
+          <span class="card-title">🔑 STATUS AGENT API</span>
+          <span id="agentapi-badge" class="pill p-muted">Mengecek...</span>
+        </div>
+        <div class="card-body">
+          <div class="stats-grid" style="margin-bottom:12px">
+            <div class="stat s1"><div class="stat-lbl">STATUS API</div><div class="stat-val" id="aa-status" style="color:var(--accent);font-size:18px">–</div><div class="stat-note" id="aa-status-note">Memeriksa...</div></div>
+            <div class="stat s2"><div class="stat-lbl">FFMPEG</div><div class="stat-val" id="aa-ffmpeg" style="color:var(--accent2);font-size:18px">–</div><div class="stat-note" id="aa-ffmpeg-path">–</div></div>
+            <div class="stat s3"><div class="stat-lbl">UPTIME SERVICE</div><div class="stat-val" id="aa-uptime" style="color:var(--accent3);font-size:18px">–</div><div class="stat-note">Sejak service keibot jalan</div></div>
+            <div class="stat s4"><div class="stat-lbl">ANTREAN RENDER</div><div class="stat-val" id="aa-queue" style="color:var(--green);font-size:18px">–</div><div class="stat-note">Job dalam antrean</div></div>
+          </div>
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);">Agent API adalah jalur khusus untuk <b style="color:var(--text)">Max (agen AI)</b> mengontrol KeiBot dari luar panel — cek status, buat batch, dan picu upload — tanpa login PIN. Halaman ini memakai sesi login PIN Anda; <b style="color:var(--text)">kunci API tidak pernah ditampilkan di sini</b>.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">📊 RINGKASAN LIVE</span><span id="aa-yt-badge" class="pill p-muted">YouTube: –</span></div>
+        <div class="card-body">
+          <div class="stats-grid">
+            <div class="stat s1"><div class="stat-lbl">BATCH AKTIF</div><div class="stat-val" id="aa-c-active" style="color:var(--accent)">0</div><div class="stat-note">Task berjalan</div></div>
+            <div class="stat s2"><div class="stat-lbl">QUEUED</div><div class="stat-val" id="aa-c-queued" style="color:var(--accent2)">0</div><div class="stat-note">Menunggu giliran</div></div>
+            <div class="stat s3"><div class="stat-lbl">RENDER / UPLOAD</div><div class="stat-val" id="aa-c-rendering" style="color:var(--accent3)">0</div><div class="stat-note">Sedang diproses</div></div>
+            <div class="stat s4"><div class="stat-lbl">TERUNGGAH</div><div class="stat-val" id="aa-c-uploaded" style="color:var(--green)">0</div><div class="stat-note">Video tayang</div></div>
+            <div class="stat s1"><div class="stat-lbl">GAGAL</div><div class="stat-val" id="aa-c-failed" style="color:var(--accent2)">0</div><div class="stat-note">Perlu dicek</div></div>
+            <div class="stat s2"><div class="stat-lbl">RIWAYAT</div><div class="stat-val" id="aa-c-history" style="color:var(--accent)">0</div><div class="stat-note">Total task selesai</div></div>
+            <div class="stat s3"><div class="stat-lbl">CHANNEL</div><div class="stat-val" id="aa-c-channels" style="color:var(--accent3)">0</div><div class="stat-note">Channel terdaftar</div></div>
+            <div class="stat s4"><div class="stat-lbl">YOUTUBE</div><div class="stat-val" id="aa-c-yt" style="color:var(--green);font-size:18px">–</div><div class="stat-note">Status koneksi</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">🧩 DAFTAR ENDPOINT AGENT API</span><span class="pill p-cyan">Base: /api/agent</span></div>
+        <div class="card-body" style="padding:0;overflow-x:auto">
+          <table class="tbl" style="min-width:520px">
+            <thead><tr><th style="text-align:left">Method</th><th style="text-align:left">Endpoint</th><th style="text-align:left">Fungsi</th></tr></thead>
+            <tbody style="font-size:11px">
+              <tr><td><code>GET</code></td><td><code>/api/agent/health</code></td><td>Cek service hidup, FFmpeg &amp; antrean</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/agent/status</code></td><td>Ringkasan counts, channel &amp; 5 job terakhir</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/agent/batches</code></td><td>Daftar batch/task aktif (+ riwayat)</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/agent/jobs</code></td><td>Daftar job terbaru (aktif + riwayat)</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/agent/batch</code></td><td>Buat batch baru (parameter sama dengan form web)</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/agent/upload</code></td><td>Render ulang + unggah task (batch_id)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-body" style="font-family:var(--font-m);font-size:11px;color:var(--muted);border-top:1px solid var(--border);">Semua endpoint memakai header <code>X-API-Key</code>. Tanpa kunci → <code>401</code>; kunci belum dipasang → <code>503</code>. Kunci hanya dipakai agen (Max) dari server — jangan pernah membagikannya.</div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">🧪 TES KONEKSI</span></div>
+        <div class="card-body">
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);margin-bottom:12px">Pemeriksaan dilakukan <b style="color:var(--text)">di server</b> (kunci tidak pernah dikirim ke browser). Klik tombol untuk menguji jalur Agent API dari dalam VPS.</div>
+          <button class="btn btn-p" onclick="testAgentApi()">🧪 TES KONEKSI AGENT API</button>
+          <div id="aa-test-result" style="margin-top:12px;font-size:11px;"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">⚠️ CATATAN KUNCI API</span></div>
+        <div class="card-body" style="font-size:11.5px;color:var(--text2);line-height:1.7">
+          • Kunci API tersimpan di file <code>/root/keibotmod/.agent.env</code> di VPS (hanya bisa dibaca root) dan tidak pernah masuk GitHub.<br>
+          • <b>Jangan pernah membagikan kunci ini</b> — siapa pun yang memegangnya bisa mengontrol KeiBot sepenuhnya.<br>
+          • <b>Instal ulang menghapus kunci:</b> <code>install.sh</code> menghapus folder keibotmod lalu clone baru, sehingga file <code>.agent.env</code> ikut terhapus. Setelah instal ulang, buat ulang file kunci dari salinan yang disimpan Max, lalu <code>sudo systemctl restart keibot</code> — sampai kunci dibuat ulang, endpoint Agent API menjawab <code>503</code>.
+        </div>
+      </div>
+    </div>
+
   </div>
 </main>
 <nav class="bottom-nav">
@@ -1340,7 +1419,7 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
         <span style="font-size:24px;">📖</span>
         <div>
           <div style="font-size:15px; font-weight:800; color:var(--text); letter-spacing:0.5px;">PANDUAN LENGKAP & SOLUSI KENDALA KEIBOT</div>
-          <div style="font-size:11px; color:var(--muted);">Petunjuk alur kerja, integrasi Google API, dan penanganan masalah umum</div>
+          <div style="font-size:11px; color:var(--muted);">Petunjuk alur kerja, integrasi Google API &amp; API Agen, dan penanganan masalah umum</div>
         </div>
       </div>
       <button onclick="closeGuideModal()" style="background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:4px 8px; border-radius:6px; transition:0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">✕</button>
@@ -1356,6 +1435,9 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
       </button>
       <button id="gtab-btn-3" class="guide-tab-btn" onclick="switchGuideTab(3)" style="padding:12px 18px; border:none; background:none; font-family:var(--font-m); font-size:11px; font-weight:700; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer;">
         ⚡ Tips Kuota & Upload
+      </button>
+      <button id="gtab-btn-4" class="guide-tab-btn" onclick="switchGuideTab(4)" style="padding:12px 18px; border:none; background:none; font-family:var(--font-m); font-size:11px; font-weight:700; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer;">
+        🔑 API Agen
       </button>
     </div>
 
@@ -1532,6 +1614,61 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
         </div>
       </div>
 
+      <!-- TAB 4: API AGEN -->
+      <div id="gtab-content-4" style="display:none;">
+        <div style="margin-bottom:18px; padding:12px 16px; background:var(--accent-dim); border:1px solid rgba(0,212,255,0.2); border-radius:8px;">
+          <strong style="color:var(--accent); display:block; margin-bottom:4px;">🔑 API Agen — Kontrol KeiBot untuk Agen AI (Max)</strong>
+          Selain lewat panel web, KeiBot bisa dikontrol oleh <b>Max (agen AI)</b> melalui Agent API — tanpa perlu membuka panel dan tanpa login PIN. Menu <b>🔑 API Agen</b> di sidebar (bagian INTEGRASI) menampilkan status jalur ini.
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px;">
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--accent); display:block; margin-bottom:6px;">🤖 Apa yang Bisa Dilakukan Agen (Max)?</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              • <b>Cek status</b> — service hidup, FFmpeg, antrean render, dan ringkasan batch.<br>
+              • <b>Lihat batch &amp; job</b> — daftar task aktif dan riwayat beserta progresnya.<br>
+              • <b>Buat batch baru</b> — parameter sama persis dengan form Batch Creator di panel.<br>
+              • <b>Picu upload</b> — render ulang lalu unggah sebuah task ke YouTube.<br>
+              Semua itu tanpa mengganggu panel Anda; panel dan login PIN tetap berfungsi normal.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--accent); display:block; margin-bottom:6px;">🧩 Daftar Endpoint (Base: /api/agent)</strong>
+            <p style="color:var(--text2); font-size:11.5px; font-family:var(--font-m);">
+              GET&nbsp;&nbsp;/api/agent/health&nbsp;&nbsp;— cek service, FFmpeg &amp; antrean<br>
+              GET&nbsp;&nbsp;/api/agent/status&nbsp;&nbsp;— ringkasan counts, channel &amp; 5 job terakhir<br>
+              GET&nbsp;&nbsp;/api/agent/batches — daftar batch/task aktif (+ riwayat)<br>
+              GET&nbsp;&nbsp;/api/agent/jobs&nbsp;&nbsp;&nbsp;&nbsp;— daftar job terbaru<br>
+              POST /api/agent/batch&nbsp;&nbsp;— buat batch baru<br>
+              POST /api/agent/upload — render ulang + unggah task (batch_id)
+            </p>
+            <p style="color:var(--text2); font-size:11.5px;">
+              Semua endpoint memakai header <code>X-API-Key</code>. Tanpa kunci → <code>401</code>; kunci belum dipasang → <code>503</code>. Menu <b>🔑 API Agen</b> punya tombol <b>🧪 Tes Koneksi</b> untuk menguji jalur ini dari dalam VPS (kunci tidak pernah dikirim ke browser).
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--yellow); display:block; margin-bottom:6px;">🔐 Kunci API — Penyimpanan &amp; Keamanan</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              Kunci API tersimpan di file <code>/root/keibotmod/.agent.env</code> di VPS (hanya bisa dibaca root) dan <b>tidak pernah masuk GitHub</b> maupun ditampilkan di panel.<br>
+              • <b>Jangan pernah membagikan kunci ini</b> — siapa pun yang memegangnya bisa mengontrol KeiBot sepenuhnya.<br>
+              • <b>Instal ulang menghapus kunci:</b> <code>install.sh</code> menghapus folder keibotmod lalu clone baru, sehingga file <code>.agent.env</code> ikut terhapus. Setelah instal ulang, buat ulang file kunci dari salinan yang disimpan Max, lalu jalankan <code>sudo systemctl restart keibot</code>. Sampai kunci dibuat ulang, endpoint Agent API menjawab <code>503</code> dan menu API Agen menampilkan <b>NONAKTIF</b>.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--green); display:block; margin-bottom:6px;">ℹ️ Catatan Penting</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              • Upload ke YouTube tetap membutuhkan channel yang sudah ditautkan (login YouTube). Tanpa channel, batch yang dibuat agen akan gagal secara wajar di worker (misalnya galeri audio kosong) — itu bukan masalah API.<br>
+              • Kalau menu API Agen menampilkan <b>NONAKTIF</b> padahal service jalan, periksa file <code>.agent.env</code> di VPS lalu restart service: <code>sudo systemctl restart keibot</code>.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
     </div>
 
     <!-- Modal Footer -->
@@ -1582,7 +1719,7 @@ function closeGuideModal() {
 }
 
 function switchGuideTab(tabNum) {
-  for (let i = 1; i <= 3; i++) {
+  for (let i = 1; i <= 4; i++) {
     const btn = document.getElementById('gtab-btn-' + i);
     const content = document.getElementById('gtab-content-' + i);
     if (btn) {
@@ -1650,7 +1787,8 @@ const PAGE_META = {
   batch:     { t: 'Batch Creator',   s: 'Buat banyak video sekaligus' },
   output:    { t: 'Output Videos',   s: 'Lihat & download video hasil render' },
   logs:      { t: 'System Logs',     s: 'Real-time log aplikasi & error' },
-  settings:  { t: 'Settings',        s: 'API Google, channel & konfigurasi' }
+  settings:  { t: 'Settings',        s: 'API Google, channel & konfigurasi' },
+  agentapi:  { t: 'API Agen',        s: 'Akses agen AI (Max) via API key' }
 };
 
 function go(id, el) {
@@ -1666,10 +1804,73 @@ function go(id, el) {
   document.getElementById('tb-title').textContent = PAGE_META[id].t;
   document.getElementById('tb-sub').textContent = PAGE_META[id].s;
   if (id === 'dashboard') fetchAnalytics();
+  if (id === 'agentapi') loadAgentApiPanel();
   if (id === 'batch') {
     refreshBatchDropdowns();
     setTimeout(initCanvas, 50);
   }
+}
+
+// ────────────────────────────────────────────────────────
+//  API AGEN — PANEL
+// ────────────────────────────────────────────────────────
+function fmtUptime(sec) {
+  if (sec === null || sec === undefined) return '–';
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return h + 'j ' + m + 'm';
+  if (m > 0) return m + ' mnt';
+  return sec + ' dtk';
+}
+
+function loadAgentApiPanel() {
+  const badge = document.getElementById('agentapi-badge');
+  if (badge) { badge.textContent = 'Mengecek...'; badge.className = 'pill p-muted'; }
+  fetch('/api/panel_agent_status').then(r => r.json()).then(d => {
+    const active = !!d.api_active;
+    if (badge) {
+      badge.textContent = active ? '🟢 AKTIF' : '🔴 NONAKTIF';
+      badge.className = 'pill ' + (active ? 'p-green' : 'p-red');
+    }
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('aa-status', active ? 'AKTIF' : 'NONAKTIF');
+    set('aa-status-note', active ? 'Kunci API terpasang' : 'Kunci belum dipasang — endpoint menjawab 503');
+    set('aa-ffmpeg', d.ffmpeg ? 'TERSEDIA' : 'TIDAK ADA');
+    set('aa-ffmpeg-path', d.ffmpeg_path || '–');
+    set('aa-uptime', fmtUptime(d.uptime_seconds));
+    set('aa-queue', d.queue_size);
+    const c = d.counts || {};
+    set('aa-c-active', c.batches_active ?? 0);
+    set('aa-c-queued', c.queued ?? 0);
+    set('aa-c-rendering', c.rendering_or_uploading ?? 0);
+    set('aa-c-uploaded', c.uploaded ?? 0);
+    set('aa-c-failed', c.failed ?? 0);
+    set('aa-c-history', c.history_total ?? 0);
+    set('aa-c-channels', c.channels ?? 0);
+    set('aa-c-yt', d.youtube_connected ? 'TERHUBUNG' : 'BELUM');
+    const yb = document.getElementById('aa-yt-badge');
+    if (yb) {
+      yb.textContent = 'YouTube: ' + (d.youtube_connected ? 'Terhubung 🟢' : 'Belum terhubung');
+      yb.className = 'pill ' + (d.youtube_connected ? 'p-green' : 'p-muted');
+    }
+  }).catch(() => {
+    if (badge) { badge.textContent = 'GAGAL MEMUAT'; badge.className = 'pill p-red'; }
+  });
+}
+
+function testAgentApi() {
+  const box = document.getElementById('aa-test-result');
+  if (box) box.innerHTML = '<span style="color:var(--muted)">⏳ Menguji koneksi dari server...</span>';
+  fetch('/api/panel_agent_test', {method: 'POST'}).then(r => r.json()).then(d => {
+    if (!box) return;
+    const rows = (d.checks || []).map(c =>
+      `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px dashed var(--border);"><span>${c.ok ? '✅' : '❌'}</span><span style="flex:1"><b>${c.name}</b><br><span style="color:var(--muted)">${c.detail || ''}</span></span></div>`
+    ).join('');
+    box.innerHTML = `<div style="font-weight:700;color:${d.status === 'ok' ? 'var(--green)' : 'var(--accent2)'};margin-bottom:6px">${d.result || ''}</div>${rows}` +
+      `<div style="color:var(--muted);margin-top:8px">Uptime service: ${fmtUptime(d.uptime_seconds)} · YouTube: ${d.youtube_connected ? 'terhubung' : 'belum terhubung'}</div>`;
+    toast(d.status === 'ok' ? 'Tes koneksi Agent API berhasil' : 'Tes koneksi menemukan masalah', d.status === 'ok' ? 'success' : 'error');
+  }).catch(() => {
+    if (box) box.innerHTML = '<span style="color:var(--accent2)">❌ Gagal menghubungi server untuk tes koneksi.</span>';
+  });
 }
 
 // ────────────────────────────────────────────────────────
