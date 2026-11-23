@@ -18,6 +18,14 @@ import secrets
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, session
 import requests
 
+# ☁️ Google Drive (opsional) — modul terpisah; gagal impor = fitur nonaktif,
+# aplikasi tetap jalan normal dengan galeri lokal.
+try:
+    import drive_storage
+except Exception as _drive_import_err:
+    drive_storage = None
+    print(f"⚠️ Google Drive tidak dimuat: {_drive_import_err}")
+
 # 🎨 PIL untuk font TTF (agar teks render mirip preview browser).
 # Fallback aman jika PIL tidak terinstall.
 try:
@@ -469,10 +477,32 @@ def get_channel_folder(yt_id, sub):
     os.makedirs(path, exist_ok=True)
     return path
 
+def _drive_prefetch(yt_id, sub):
+    """Jika mode Drive aktif (disk hampir penuh + Drive terhubung), unduh
+    file galeri dari folder Drive ke folder channel lokal, lalu picker
+    lanjut membaca disk seperti biasa. Gagal = lanjut lokal."""
+    if drive_storage is None:
+        return
+    try:
+        cfg = drive_storage.load_drive_config()
+        use_drive, _reason = drive_storage.should_use_drive(cfg)
+        if not use_drive:
+            return
+        folder_id = cfg.get(drive_storage.FOLDER_KEY_BY_SUB.get(sub, ""), "")
+        if not folder_id:
+            return
+        dest = get_channel_folder(yt_id, sub)
+        drive_storage.sync_gallery_folder(
+            folder_id, dest, drive_storage.EXTS_BY_SUB.get(sub), cfg)
+    except Exception as e:
+        print(f"[KeiBot][Drive] prefetch gagal (lanjut lokal): {e}")
+
+
 def get_multi_backgrounds(yt_id, count=1, locked_files=None):
     """Ambil background dari gallery channel.
     Jika locked_files (list nama file) diberikan, gunakan file tersebut
     (pastikan ada di disk). Jika tidak, pilih secara acak sejumlah count."""
+    _drive_prefetch(yt_id, "backgrounds")
     path = get_channel_folder(yt_id, "backgrounds")
     all_files = [f for f in os.listdir(path) if f.lower().endswith(('.mp4', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.mov'))]
 
@@ -503,12 +533,14 @@ def get_multi_backgrounds(yt_id, count=1, locked_files=None):
     return selected
 
 def get_all_audios(yt_id):
+    _drive_prefetch(yt_id, "audios")
     path = get_channel_folder(yt_id, "audios")
     files = [os.path.join(path, f) for f in os.listdir(path) if f.lower().endswith(('.mp3', '.wav'))]
     random.shuffle(files)
     return files
 
 def get_and_consume_thumbnail(yt_id):
+    _drive_prefetch(yt_id, "thumbnails")
     path = get_channel_folder(yt_id, "thumbnails")
     files = sorted([f for f in os.listdir(path) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
     if not files: return None
@@ -2418,11 +2450,36 @@ def background_worker():
                     shutil.move(final_video, dest_path)
                 except:
                     dest_path = final_video
+                # ☁️ Arsipkan ke Drive (opsional): jika upload_renders aktif,
+                # unggah hasil render ke folder Drive. Bila delete_after_upload
+                # aktif, hapus file lokal sesudah berhasil — tautan unduhan
+                # lalu mengarah ke Drive. Gagal = tetap lokal, render aman.
+                drive_link = None
+                try:
+                    if drive_storage is not None:
+                        cfg = drive_storage.load_drive_config()
+                        if cfg.get("upload_renders") and cfg.get("folder_renders"):
+                            svc, _svc_err = drive_storage.get_service()
+                            if svc is not None:
+                                fid, link = drive_storage.upload_file(
+                                    svc, dest_path, cfg["folder_renders"])
+                                if fid:
+                                    drive_link = link
+                                    if cfg.get("delete_after_upload"):
+                                        try:
+                                            os.remove(dest_path)
+                                        except Exception:
+                                            drive_link = None
+                except Exception as _drv_e:
+                    print(f"[KeiBot][Drive] arsip render gagal: {_drv_e}")
                 with db_lock:
                     for d in active_tasks:
                         if d['id'] == task_id: d['status'] = "Render Selesai ✅"
                 save_tasks_db()
-                dl_link = f"/download_vps/{os.path.basename(dest_path)}"
+                if drive_link:
+                    dl_link = drive_link
+                else:
+                    dl_link = f"/download_vps/{os.path.basename(dest_path)}"
                 move_to_history(task_id, f"Render Selesai ✅ <a href='{dl_link}' target='_blank'>[Download Video]</a>")
                 # Selesai untuk tujuan VPS, alur akan berlanjut ke finally untuk cleanup dan ambil task berikutnya
             elif channel_data:
@@ -3328,6 +3385,7 @@ try:
         "get_history_tasks": lambda: history_tasks,
         "get_channels": lambda: database_channel,
         "get_queue_size": lambda: render_queue.qsize(),
+        "get_drive_status": lambda: _panel_drive_summary(),
     })
     app.register_blueprint(agent_api)
 except Exception as _agent_api_err:
@@ -3406,6 +3464,128 @@ def panel_agent_test():
                     "checks": checks,
                     "uptime_seconds": s["uptime_seconds"],
                     "youtube_connected": s["youtube_connected"]})
+
+# ── Panel "Google Drive" (login PIN, tanpa token) ──────────────────
+# Jalur ini KHUSUS untuk halaman panel web — status/koneksi Drive
+# lewat sesi login PIN. Token Drive tidak pernah dikirim ke browser.
+def _panel_drive_summary():
+    """Ringkasan status Drive + disk, aman bila modul tidak dimuat."""
+    if drive_storage is None:
+        try:
+            total, used, free = shutil.disk_usage(BASE_DIR)
+            disk = {"total_gb": round(total / (1024 ** 3), 2),
+                    "used_gb": round(used / (1024 ** 3), 2),
+                    "free_gb": round(free / (1024 ** 3), 2),
+                    "pct_used": round(used / total * 100, 1) if total else 0.0,
+                    "ok": True}
+        except Exception:
+            disk = {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0,
+                    "pct_used": 0.0, "ok": False}
+        return {"module_loaded": False, "configured": False,
+                "connected": False, "token_exists": False,
+                "mode": "nonaktif", "use_drive": False,
+                "use_drive_reason": "Modul drive_storage tidak dimuat.",
+                "disk": disk, "folders_set": {},
+                "config": {}, "drive_user": None,
+                "error": "Modul drive_storage tidak dimuat — periksa log service."}
+    return drive_storage.status_summary()
+
+
+@app.route('/api/panel_drive_status', methods=['GET'])
+def panel_drive_status():
+    return jsonify({"status": "ok", **_panel_drive_summary()})
+
+
+@app.route('/api/panel_drive_save', methods=['POST'])
+def panel_drive_save():
+    if drive_storage is None:
+        return jsonify({"status": "error",
+                        "error": "Modul drive_storage tidak dimuat."})
+    data = request.get_json(silent=True) or {}
+    ok, err = drive_storage.save_drive_config(data)
+    if not ok:
+        return jsonify({"status": "error", "error": err})
+    return jsonify({"status": "ok", "message": "Konfigurasi Drive disimpan.",
+                    **_panel_drive_summary()})
+
+
+@app.route('/api/panel_drive_test', methods=['POST'])
+def panel_drive_test():
+    """Tes koneksi Drive dari sisi server (token tidak keluar server)."""
+    s = _panel_drive_summary()
+    disk = s.get("disk", {})
+    checks = [
+        {"name": "Modul Drive dimuat", "ok": s.get("module_loaded", False),
+         "detail": "drive_storage.py aktif" if s.get("module_loaded")
+                   else "Modul tidak dimuat — periksa log service"},
+        {"name": "client_secret.json ada", "ok": os.path.exists(CLIENT_SECRETS_FILE),
+         "detail": "File kredensial Google ada" if os.path.exists(CLIENT_SECRETS_FILE)
+                   else "Belum ada — unggah di Settings (menu API Google)"},
+        {"name": "Folder galeri Drive dikonfigurasi", "ok": s.get("configured", False),
+         "detail": "Minimal satu folder Drive diisi" if s.get("configured")
+                   else "Isi ID folder Drive di bawah lalu simpan"},
+        {"name": "Token Drive ada", "ok": s.get("token_exists", False),
+         "detail": "drive_token.json ada" if s.get("token_exists")
+                   else "Belum terhubung — klik Hubungkan Google Drive"},
+        {"name": "Terhubung ke Drive", "ok": s.get("connected", False),
+         "detail": ("Terhubung sebagai " + (s.get("drive_user") or {}).get("email", ""))
+                   if s.get("connected") else (s.get("error") or "Belum terhubung")},
+        {"name": "Disk VPS", "ok": True,
+         "detail": (f"{disk.get('free_gb')} GB bebas dari {disk.get('total_gb')} GB "
+                    f"({disk.get('pct_used')}% terpakai) — mode galeri: {s.get('mode')}")
+                   if disk.get("ok") else "Info disk tidak bisa dibaca"},
+    ]
+    all_ok = all(c["ok"] for c in checks)
+    return jsonify({"status": "ok" if all_ok else "error",
+                    "result": "OK — Google Drive siap dipakai" if all_ok
+                              else "Ada pemeriksaan yang gagal (lihat detail)",
+                    "checks": checks, "mode": s.get("mode"),
+                    "use_drive": s.get("use_drive"),
+                    "use_drive_reason": s.get("use_drive_reason")})
+
+
+@app.route('/api/panel_drive_device', methods=['POST'])
+def panel_drive_device():
+    """Mulai aktivasi Drive (device-code flow). Mengembalikan URL + kode
+    untuk dimasukkan di google.com/device — device_code dipakai frontend
+    untuk polling, bukan token."""
+    if drive_storage is None:
+        return jsonify({"status": "error",
+                        "error": "Modul drive_storage tidak dimuat."})
+    data, err = drive_storage.start_device_flow()
+    if err:
+        return jsonify({"status": "error", "error": err})
+    return jsonify({"status": "ok", **data})
+
+
+@app.route('/api/panel_drive_poll', methods=['POST'])
+def panel_drive_poll():
+    if drive_storage is None:
+        return jsonify({"status": "error",
+                        "error": "Modul drive_storage tidak dimuat."})
+    body = request.get_json(silent=True) or {}
+    ok, res = drive_storage.poll_device_flow(body.get("device_code", ""))
+    if res == "pending":
+        return jsonify({"status": "pending", "interval": 5000})
+    if res == "pending-slow":
+        return jsonify({"status": "pending", "interval": 10000})
+    if not ok:
+        return jsonify({"status": "error", "error": res})
+    return jsonify({"status": "success",
+                    "message": "Google Drive terhubung!"})
+
+
+@app.route('/api/panel_drive_disconnect', methods=['POST'])
+def panel_drive_disconnect():
+    if drive_storage is None:
+        return jsonify({"status": "error",
+                        "error": "Modul drive_storage tidak dimuat."})
+    if drive_storage.disconnect():
+        return jsonify({"status": "ok",
+                        "message": "Google Drive diputuskan (token dihapus)."})
+    return jsonify({"status": "error",
+                    "error": "Gagal menghapus token Drive."})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
