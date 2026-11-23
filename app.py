@@ -341,6 +341,21 @@ active_tasks = task_data.get("active", [])
 history_tasks = task_data.get("history", [])
 database_channel = load_channels()
 
+# FIX tabrakan ID task: dulu ID = timestamp detik (int(time.time()) + i),
+# sehingga dua batch yang dibuat dalam detik yang sama mendapat ID identik
+# (stop/selesai bisa mengenai task yang salah). Sekarang ID monotonik naik,
+# diinisialisasi dari ID terbesar yang sudah tersimpan (atau jam sekarang).
+_task_id_counter = None
+def _next_task_id():
+    global _task_id_counter
+    with db_lock:
+        if _task_id_counter is None:
+            existing = [t.get('id', 0) for t in active_tasks + history_tasks
+                        if isinstance(t.get('id'), int)]
+            _task_id_counter = max([int(time.time())] + existing)
+        _task_id_counter += 1
+        return _task_id_counter
+
 render_queue = queue.Queue()
 stop_flags = {}
 channel_cooldowns = {}
@@ -3308,7 +3323,7 @@ def create_batch_tasks(data):
     interval_days = float(data.get('interval_days', 1))
         
     for i in range(count):
-        t_id = int(time.time()) + i
+        t_id = _next_task_id()
         task_ids.append(t_id)
         v_date = base_date + timedelta(days=i * interval_days)
         
