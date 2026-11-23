@@ -2596,36 +2596,11 @@ def background_worker():
                     shutil.move(final_video, dest_path)
                 except:
                     dest_path = final_video
-                # ☁️ Arsipkan ke Drive (opsional): jika upload_renders aktif,
-                # unggah hasil render ke folder Drive. Bila delete_after_upload
-                # aktif, hapus file lokal sesudah berhasil — tautan unduhan
-                # lalu mengarah ke Drive. Gagal = tetap lokal, render aman.
-                drive_link = None
-                try:
-                    if drive_storage is not None:
-                        cfg = drive_storage.load_drive_config()
-                        if cfg.get("upload_renders") and cfg.get("folder_renders"):
-                            svc, _svc_err = drive_storage.get_service()
-                            if svc is not None:
-                                fid, link = drive_storage.upload_file(
-                                    svc, dest_path, cfg["folder_renders"])
-                                if fid:
-                                    drive_link = link
-                                    if cfg.get("delete_after_upload"):
-                                        try:
-                                            os.remove(dest_path)
-                                        except Exception:
-                                            drive_link = None
-                except Exception as _drv_e:
-                    print(f"[KeiBot][Drive] arsip render gagal: {_drv_e}")
                 with db_lock:
                     for d in active_tasks:
                         if d['id'] == task_id: d['status'] = "Render Selesai ✅"
                 save_tasks_db()
-                if drive_link:
-                    dl_link = drive_link
-                else:
-                    dl_link = f"/download_vps/{os.path.basename(dest_path)}"
+                dl_link = f"/download_vps/{os.path.basename(dest_path)}"
                 move_to_history(task_id, f"Render Selesai ✅ <a href='{dl_link}' target='_blank'>[Download Video]</a>")
                 # Selesai untuk tujuan VPS, alur akan berlanjut ke finally untuk cleanup dan ambil task berikutnya
             elif channel_data:
