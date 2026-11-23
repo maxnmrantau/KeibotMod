@@ -3619,35 +3619,6 @@ def delete_output_video():
         return jsonify({"status": "success"})
     return jsonify({"status": "error", "error": "File tidak ditemukan"})
 
-@app.route('/api/get_logs')
-def get_logs():
-    try:
-        lines = request.args.get('lines', '100')
-        result = subprocess.run(['journalctl', '-u', 'keibot', '-n', str(lines), '--no-pager', '-q'], 
-                               capture_output=True, text=True, timeout=10)
-        return result.stdout[-50000:] or '(kosong)'
-    except Exception as e:
-        try:
-            log_file = os.path.join(BASE_DIR, 'app.log')
-            if os.path.exists(log_file):
-                with open(log_file) as f: return f.read()[-50000:]
-        except: pass
-        return f"(Tidak bisa baca log: {str(e)[:50]})"
-
-@app.route('/api/clear_logs', methods=['POST'])
-def clear_logs():
-    # FIX: DULU endpoint ini menjalankan
-    #   journalctl --rotate -u keibot
-    #   journalctl --vacuum-time=1s -u keibot
-    # dan itu BERBAHAYA: menurut man journalctl(1), --vacuum-time menghapus
-    # FILE jurnal arsip (bukan entri per-unit) dan -u HANYA filter tampilan
-    # — vacuum TIDAK menghormati -u. Ditambah --rotate, perintah itu
-    # menghapus SELURUH riwayat jurnal sistem (SSH, kernel, service lain),
-    # bukan cuma log Keibot. journald memang tidak punya cara menghapus log
-    # per-unit, jadi vacuum dihapus total; endpoint menolak dengan jelas.
-    return jsonify({"status": "error",
-                    "error": "Log Keibot tidak bisa dihapus terpisah — jurnal sistem tidak mendukung hapus per-unit (vacuum akan menghapus seluruh jurnal sistem)."}), 400
-
 # ── Agent API (X-API-Key, tanpa login PIN) ─────────────────────────
 # Blueprint di agent_api.py; dependensi diinjeksikan agar modul itu
 # tidak perlu mengimpor app (app.py jalan sebagai __main__).
