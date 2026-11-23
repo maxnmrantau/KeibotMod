@@ -3308,20 +3308,57 @@ def poll_device_token():
 def create_batch_tasks(data):
     """Inti pembuatan batch — dipakai /api/batch_create (web) dan
     /api/agent/batch (agent API). Mengembalikan (payload, http_code)."""
-    task_ids = []
+    # FIX validasi input: dulu nilai apa pun lolos (count string/float -> 500,
+    # count 0/negatif -> "sukses" 0 video, count raksasa -> ribuan task,
+    # interval non-angka -> 500, yt_id kosong -> semua task gagal di worker,
+    # mp3/bg bukan angka -> worker crash saat int()).
+    def _bad(msg):
+        return {"status": "error", "message": msg}, 400
+
+    def _to_int(value):
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, float) and not value.is_integer():
+            return None
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+
+    if not isinstance(data, dict):
+        return _bad("Data batch tidak valid")
     yt_id = data.get('yt_id')
-    count = data.get('count', 1)
+    if not yt_id or not isinstance(yt_id, str):
+        return _bad("yt_id wajib diisi")
+    count = _to_int(data.get('count', 1))
+    if count is None or count < 1 or count > 100:
+        return _bad("count harus bilangan bulat 1-100")
+    try:
+        interval_days = float(data.get('interval_days', 1))
+    except (ValueError, TypeError):
+        return _bad("interval_days harus angka > 0")
+    if interval_days <= 0:
+        return _bad("interval_days harus > 0")
+    mp3_per_video = _to_int(data.get('mp3_per_video', 5))
+    if mp3_per_video is None or mp3_per_video < 1 or mp3_per_video > 100:
+        return _bad("mp3_per_video harus bilangan bulat 1-100")
+    bg_count = _to_int(data.get('bg_count', 1))
+    if bg_count is None or bg_count < 1 or bg_count > 50:
+        return _bad("bg_count harus bilangan bulat 1-50")
     titles = data.get('generated_titles', [])
-    durations_array = data.get('target_durations_array', []) 
-    
+    if not isinstance(titles, list):
+        titles = []
+    durations_array = data.get('target_durations_array', [])
+    if not isinstance(durations_array, list):
+        durations_array = []
+
+    task_ids = []
+
     try:
         base_date = datetime.strptime(data['start_date'], '%Y-%m-%dT%H:%M')
     except:
         return {"status": "error", "message": "Format tanggal salah"}, 400
-        
-    # 🔥 FIX 1: Konversi interval_days ke float secara eksplisit untuk mencegah TypeError pada timedelta
-    interval_days = float(data.get('interval_days', 1))
-        
+
     for i in range(count):
         t_id = _next_task_id()
         task_ids.append(t_id)
@@ -3335,8 +3372,8 @@ def create_batch_tasks(data):
         blueprint = {
             "id": t_id, "yt_id": yt_id, "title": titles[i] if i < len(titles) else f"Auto Video #{i+1}",
             "publish_date": v_date.strftime('%Y-%m-%d %H:%M'),
-            "mp3_per_video": data.get('mp3_per_video', 5), 
-            "bg_count": data.get('bg_count', 1),
+            "mp3_per_video": mp3_per_video,
+            "bg_count": bg_count,
             # 🐛 FIX: Simpan locked_bg_files agar background yg dipilih user di preview dipakai saat render.
             "locked_bg_files": data.get('locked_bg_files', []),
             "target_duration_hours": vid_duration,
