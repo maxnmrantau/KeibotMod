@@ -342,11 +342,21 @@ def list_files(service, folder_id, exts=None, page_size=100):
         return [], "ID folder Drive kosong."
     try:
         query = f"'{folder_id}' in parents and trashed = false"
-        resp = service.files().list(
-            q=query, pageSize=page_size,
-            fields="files(id,name,mimeType,size,modifiedTime)",
-            orderBy="modifiedTime desc").execute()
-        files = resp.get("files", [])
+        # FIX: dulu hanya 1 halaman (pageSize=100) — folder berisi >100 file
+        # kehilangan sisanya diam-diam. Sekarang loop semua halaman.
+        files = []
+        page_token = None
+        while True:
+            kwargs = dict(q=query, pageSize=page_size,
+                          fields="nextPageToken,files(id,name,mimeType,size,modifiedTime)",
+                          orderBy="modifiedTime desc")
+            if page_token:
+                kwargs['pageToken'] = page_token
+            resp = service.files().list(**kwargs).execute()
+            files.extend(resp.get("files", []))
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
         if exts:
             exts = {e.lower() for e in exts}
             files = [f for f in files
