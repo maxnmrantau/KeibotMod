@@ -234,7 +234,16 @@ def check_security():
     # Agent API (/api/agent/*) diamankan API key sendiri (X-API-Key),
     # bukan lewat login PIN — lewati pemeriksaan sesi di sini.
     if request.path.startswith('/api/agent/'): return
-    allowed_routes = ['login', 'setup', 'static', 'serve_uploads', 'device_login', 'poll_device_token']
+    # FIX keamanan: file media di static/ (video jadi final_*.mp4) wajib login.
+    # Hanya aset non-media (mis. logo.png halaman login) yang bebas tanpa login.
+    if request.endpoint == 'static':
+        fname = (request.path or '').rsplit('/', 1)[-1].lower()
+        if fname.startswith('final_') or fname.endswith(('.mp4', '.mp3', '.wav', '.mov', '.webm', '.mkv', '.flac', '.ogg')):
+            if 'logged_in' not in session:
+                return redirect(url_for('login'))
+        return
+    # 'serve_uploads' TIDAK lagi dibebaskan: galeri (/uploads/...) wajib login.
+    allowed_routes = ['login', 'setup', 'static', 'device_login', 'poll_device_token']
     if request.endpoint in allowed_routes: return
     if not is_configured(): return redirect(url_for('setup'))
     if 'logged_in' not in session: return redirect(url_for('login'))
