@@ -3252,10 +3252,13 @@ def get_playlists():
 
 @app.route('/api/stop_task/<int:task_id>', methods=['POST'])
 def stop_task(task_id):
-    stop_flags[task_id] = True
+    # FIX: dulu selalu "Dihentikan!" walau task tidak ada di antrean aktif.
+    # Sekarang 404 + pesan jelas kalau tidak ada task yang cocok.
+    found = False
     with db_lock:
         for t in active_tasks:
             if t['id'] == task_id:
+                found = True
                 st = t.get('status', '')
                 if st == "In Factory Queue ⚙️" or "Antrean Ditunda" in st or "Antre Ulang" in st or "Gagal" in st:
                     t['status'] = "Dibatalkan Pengguna 🛑"
@@ -3264,7 +3267,11 @@ def stop_task(task_id):
                     active_tasks.remove(t)
                     if len(history_tasks) > 50: history_tasks.pop()
                 break
+    if found:
+        stop_flags[task_id] = True
     save_tasks_db()
+    if not found:
+        return jsonify({"status": "error", "message": f"Task {task_id} tidak ditemukan di antrean aktif."}), 404
     return jsonify({"status": "success", "message": "Dihentikan!"})
 
 @app.route('/api/check_secret')
