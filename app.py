@@ -1854,6 +1854,10 @@ def render_video_core(task_id, audio_path, bg_paths, output_path, duration, cfg,
                 fade_dur = float(cfg.get('fade_duration', 0) or 0)
             except (ValueError, TypeError):
                 fade_dur = 0.0
+            # FIX: dulu fade_duration >= durasi video membuat SEMUA frame
+            # redup selamanya (alpha < 1 di setiap frame). Batasi maksimal
+            # setengah durasi video supaya ada bagian yang cerah penuh.
+            fade_dur = max(0.0, min(fade_dur, duration / 2.0))
             if fade_dur > 0:
                 fade_frames = int(fade_dur * fps)
                 # fade in (awal video: dari hitam ke normal)
