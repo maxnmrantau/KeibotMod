@@ -481,8 +481,6 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
     <button class="nav-item" onclick="go('titles',this)" id="nb-titles"><span class="nav-icon">✦</span> Title Generator</button>
     <button class="nav-item" onclick="go('output',this)" id="nb-output"><span class="nav-icon">📁</span> Output Videos</button>
     <button class="nav-item" onclick="go('batch',this)" id="nb-batch"><span class="nav-icon">◉</span> Batch Creator</button>
-    <div class="nav-section">MONITOR</div>
-    <button class="nav-item" onclick="go('logs',this)" id="nb-logs"><span class="nav-icon">📋</span> Logs</button>
     <div class="nav-section">INTEGRASI</div>
     <button class="nav-item" onclick="go('agentapi',this)" id="nb-agentapi"><span class="nav-icon">🔑</span> API Agen</button>
     <button class="nav-item" onclick="go('drive',this)" id="nb-drive"><span class="nav-icon">☁️</span> Google Drive</button>
@@ -1248,17 +1246,6 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
       </div>
 	    </div>
 
-	    <div id="panel-logs" class="panel">
-	      <div class="sh" style="margin-bottom:16px">
-	        <div><div class="sh-title">📋 System Logs</div><div class="sh-sub">Real-time log dari aplikasi</div></div>
-	        <div style="display:flex;gap:6px;">
-	          <button class="btn btn-g btn-sm" onclick="loadLogs()">🔄 Refresh</button>
-	          <button class="btn btn-danger btn-sm" onclick="clearLogs()">🗑 Clear</button>
-	        </div>
-	      </div>
-	      <pre id="log-output" style="background:#0a0a0a;color:#0f0;font-family:'Courier New',monospace;font-size:11px;padding:12px;border-radius:8px;border:1px solid var(--border);max-height:70vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.5;">Memuat log...</pre>
-	    </div>
-
 	    <div id="panel-settings" class="panel">
       <div class="sh" style="margin-bottom:20px">
         <div><div class="sh-title">Settings</div><div class="sh-sub">API Google, channel & konfigurasi sistem</div></div>
@@ -1966,7 +1953,6 @@ const PAGE_META = {
   titles:    { t: 'Title Generator', s: 'Upload bank & generate judul baru' },
   batch:     { t: 'Batch Creator',   s: 'Buat banyak video sekaligus' },
   output:    { t: 'Output Videos',   s: 'Lihat & download video hasil render' },
-  logs:      { t: 'System Logs',     s: 'Real-time log aplikasi & error' },
   settings:  { t: 'Settings',        s: 'API Google, channel & konfigurasi' },
   agentapi:  { t: 'API Agen',        s: 'Akses agen AI (Max) via API key' },
   drive:    { t: 'Google Drive',    s: 'Galeri dari Drive saat disk VPS hampir penuh' }
@@ -4796,9 +4782,6 @@ function init() {
   setInterval(fetchServerTasks, 2000); 
   setInterval(pollSysStats, 3000); 
   setInterval(fetchNotifs, 10000);
-  setInterval(() => {
-    if (document.getElementById('panel-logs').classList.contains('active')) loadLogs();
-  }, 5000);
   
   fetchNotifs();
   drawLivePreview();
@@ -4848,21 +4831,6 @@ function deleteOutputVideo(name) {
     .then(d => { if (d.status === 'success') loadOutputVideos(); else alert(d.error); });
 }
 
-function loadLogs() {
-  const el = document.getElementById('log-output');
-  el.textContent = '⏳ Memuat log...';
-  fetch('/api/get_logs?lines=100')
-    .then(r => r.text())
-    .then(data => { el.textContent = data || '(kosong)'; })
-    .catch(() => { el.textContent = '❌ Gagal memuat log'; });
-}
-
-function clearLogs() {
-  document.getElementById('log-output').textContent = '⏳ Menghapus log...';
-  fetch('/api/clear_logs', { method:'POST' })
-    .then(r => r.json())
-    .then(d => { document.getElementById('log-output').textContent = d.status === 'success' ? '✅ Log dibersihkan' : '❌ Gagal: '+d.error; });
-}
 document.addEventListener("DOMContentLoaded", init);
 </script>
 </body>
