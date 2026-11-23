@@ -223,6 +223,9 @@ app.secret_key = bot_config.get('secret_key', secrets.token_hex(24))
 
 @app.before_request
 def check_security():
+    # Agent API (/api/agent/*) diamankan API key sendiri (X-API-Key),
+    # bukan lewat login PIN — lewati pemeriksaan sesi di sini.
+    if request.path.startswith('/api/agent/'): return
     allowed_routes = ['login', 'setup', 'static', 'serve_uploads', 'device_login', 'poll_device_token']
     if request.endpoint in allowed_routes: return
     if not is_configured(): return redirect(url_for('setup'))
@@ -3152,9 +3155,10 @@ def poll_device_token():
         return jsonify({"status": "error", "error": str(e)})
 
 # --- BATCH CREATOR ---
-@app.route('/api/batch_create', methods=['POST'])
-def batch_create():
-    data = request.json
+def create_batch_tasks(data):
+    """Inti pembuatan batch — dipakai /api/batch_create (web) dan
+    /api/agent/batch (agent API). Mengembalikan (payload, http_code)."""
+    task_ids = []
     yt_id = data.get('yt_id')
     count = data.get('count', 1)
     titles = data.get('generated_titles', [])
@@ -3163,13 +3167,14 @@ def batch_create():
     try:
         base_date = datetime.strptime(data['start_date'], '%Y-%m-%dT%H:%M')
     except:
-        return jsonify({"status": "error", "message": "Format tanggal salah"}), 400
+        return {"status": "error", "message": "Format tanggal salah"}, 400
         
     # 🔥 FIX 1: Konversi interval_days ke float secara eksplisit untuk mencegah TypeError pada timedelta
     interval_days = float(data.get('interval_days', 1))
         
     for i in range(count):
         t_id = int(time.time()) + i
+        task_ids.append(t_id)
         v_date = base_date + timedelta(days=i * interval_days)
         
         if i < len(durations_array):
@@ -3221,7 +3226,40 @@ def batch_create():
     # Menghindari penulisan beruntun ke disk I/O yang menyebabkan VPS freeze/lag
     save_tasks_db()
     
-    return jsonify({"status": "success", "message": f"{count} Video diproses!"})
+    return {"status": "success", "message": f"{count} Video diproses!", "task_ids": task_ids}, 200
+
+
+@app.route('/api/batch_create', methods=['POST'])
+def batch_create():
+    payload, code = create_batch_tasks(request.json or {})
+    return jsonify(payload), code
+
+
+def requeue_task(task_id):
+    """Masukkan ulang blueprint sebuah task aktif ke antrean render agar
+    worker merender (ulang) lalu mengunggahnya ke YouTube seperti biasa.
+    Dipakai /api/agent/upload. Mengembalikan (payload, http_code)."""
+    found = None
+    with db_lock:
+        for t in active_tasks:
+            if t.get('id') == task_id:
+                found = t
+                bp = t.get('blueprint')
+                if not bp:
+                    return {"status": "error", "error": "Task ini tidak punya blueprint untuk diantre ulang"}, 409
+                t['status'] = "In Factory Queue ⚙️"
+                t.pop('start_ts', None)
+                t.pop('render_start', None)
+                render_queue.put(bp)
+                break
+    if found is not None:
+        save_tasks_db()
+        return {"status": "success", "message": "Task dimasukkan ulang ke antrean render/upload",
+                "task": {"id": found.get("id"), "title": found.get("title"), "status": found.get("status")}}, 200
+    for t in history_tasks:
+        if t.get('id') == task_id:
+            return {"status": "error", "error": "Task sudah selesai (riwayat); blueprint sudah dihapus — buat batch baru"}, 409
+    return {"status": "error", "error": "Task tidak ditemukan"}, 404
     
 @app.route('/uploads/<path:filename>')
 def serve_uploads(filename):
@@ -3277,6 +3315,23 @@ def clear_logs():
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)[:50]})
+
+# ── Agent API (X-API-Key, tanpa login PIN) ─────────────────────────
+# Blueprint di agent_api.py; dependensi diinjeksikan agar modul itu
+# tidak perlu mengimpor app (app.py jalan sebagai __main__).
+try:
+    from agent_api import agent_api, init_agent_api
+    init_agent_api({
+        "create_batch_tasks": create_batch_tasks,
+        "requeue_task": requeue_task,
+        "get_active_tasks": lambda: active_tasks,
+        "get_history_tasks": lambda: history_tasks,
+        "get_channels": lambda: database_channel,
+        "get_queue_size": lambda: render_queue.qsize(),
+    })
+    app.register_blueprint(agent_api)
+except Exception as _agent_api_err:
+    print(f"⚠️ Agent API tidak dimuat: {_agent_api_err}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
