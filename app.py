@@ -400,11 +400,17 @@ def get_ffprobe_path():
         if os.path.exists(p): return p
     return "ffprobe"
 
-def wait_for_resources(task_id, max_ram_pct=85.0):
+def wait_for_resources(task_id, max_ram_pct=85.0, max_wait_seconds=1800):
+    # FIX: dulu while True tanpa batas — kalau RAM betah di atas 85%, task
+    # menggantung selamanya (status "Menunggu RAM Turun" + tulis tasks_db
+    # tiap 10 detik). Sekarang maks 30 menit, lalu gagal dengan pesan jelas.
+    deadline = time.time() + max_wait_seconds
     while True:
         if stop_flags.get(task_id): return False
         stats = get_system_stats()
         if stats['ram_pct'] < max_ram_pct: return True
+        if time.time() >= deadline:
+            raise TimeoutError(f"RAM masih {stats['ram_pct']}% setelah {max_wait_seconds // 60} menit menunggu (batas {max_ram_pct}%). Task dibatalkan.")
         with db_lock:
             for d in active_tasks:
                 if d['id'] == task_id: d['status'] = f"Menunggu RAM Turun ({stats['ram_pct']}%) ⏳"
