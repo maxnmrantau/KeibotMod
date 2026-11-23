@@ -485,6 +485,7 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
     <button class="nav-item" onclick="go('logs',this)" id="nb-logs"><span class="nav-icon">📋</span> Logs</button>
     <div class="nav-section">INTEGRASI</div>
     <button class="nav-item" onclick="go('agentapi',this)" id="nb-agentapi"><span class="nav-icon">🔑</span> API Agen</button>
+    <button class="nav-item" onclick="go('drive',this)" id="nb-drive"><span class="nav-icon">☁️</span> Google Drive</button>
     <div class="nav-section">SYSTEM</div>
     <button class="nav-item" onclick="go('settings',this)" id="nb-settings"><span class="nav-icon">◎</span> Settings</button>
   </nav>
@@ -1383,6 +1384,83 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
       </div>
     </div>
 
+    <div id="panel-drive" class="panel">
+      <div class="sh" style="margin-bottom:20px">
+        <div><div class="sh-title">☁️ Google Drive</div><div class="sh-sub">Galeri dari Drive saat disk VPS hampir penuh</div></div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-g btn-sm" onclick="loadDrivePanel()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">
+          <span class="card-title">☁️ STATUS GOOGLE DRIVE</span>
+          <span id="drive-badge" class="pill p-muted">Mengecek...</span>
+        </div>
+        <div class="card-body">
+          <div class="stats-grid" style="margin-bottom:12px">
+            <div class="stat s1"><div class="stat-lbl">MODE GALERI</div><div class="stat-val" id="dr-mode" style="color:var(--accent);font-size:18px">–</div><div class="stat-note" id="dr-mode-note">Memeriksa...</div></div>
+            <div class="stat s2"><div class="stat-lbl">DISK BEBAS</div><div class="stat-val" id="dr-free" style="color:var(--accent2);font-size:18px">–</div><div class="stat-note" id="dr-total">–</div></div>
+            <div class="stat s3"><div class="stat-lbl">DISK TERPAKAI</div><div class="stat-val" id="dr-used-pct" style="color:var(--accent3);font-size:18px">–</div><div class="stat-note" id="dr-used">–</div></div>
+            <div class="stat s4"><div class="stat-lbl">AKUN DRIVE</div><div class="stat-val" id="dr-user" style="color:var(--green);font-size:14px">–</div><div class="stat-note" id="dr-user-note">Belum terhubung</div></div>
+          </div>
+          <div style="height:10px;background:var(--border);border-radius:6px;overflow:hidden;margin-bottom:8px"><div id="dr-disk-bar" style="height:100%;width:0%;background:var(--accent);border-radius:6px"></div></div>
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);">Kalau disk bebas tinggal di bawah batas (bawaan 5 GB) atau terpakai di atas batas (bawaan 85%), galeri otomatis diambil dari folder Google Drive — bukan dari disk VPS. <b style="color:var(--text)">Token Drive tidak pernah ditampilkan di sini</b>.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">⚙️ KONFIGURASI FOLDER DRIVE</span><span class="pill p-cyan">ID folder dari URL Drive</span></div>
+        <div class="card-body" style="font-size:11.5px;color:var(--text2);line-height:1.7">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="fg" style="margin-bottom:0"><label class="fl">Folder Audio (Drive)</label><input type="text" id="dr-folder-audios" placeholder="ID folder Drive — kosong = tidak dipakai"></div>
+            <div class="fg" style="margin-bottom:0"><label class="fl">Folder Background (Drive)</label><input type="text" id="dr-folder-backgrounds" placeholder="ID folder Drive"></div>
+            <div class="fg" style="margin-bottom:0"><label class="fl">Folder Thumbnail (Drive)</label><input type="text" id="dr-folder-thumbnails" placeholder="ID folder Drive"></div>
+            <div class="fg" style="margin-bottom:0"><label class="fl">Folder Arsip Render (Drive)</label><input type="text" id="dr-folder-renders" placeholder="ID folder Drive (opsional)"></div>
+            <div class="fg" style="margin-bottom:0"><label class="fl">Batas disk bebas (GB)</label><input type="number" id="dr-free-threshold" step="0.5" min="0.5" max="50"></div>
+            <div class="fg" style="margin-bottom:0"><label class="fl">Batas disk terpakai (%)</label><input type="number" id="dr-usage-threshold" step="1" min="50" max="99"></div>
+          </div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+            <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="dr-upload-renders" style="width:16px;height:16px;accent-color:var(--accent);"> Arsipkan hasil render (tujuan VPS) ke folder Drive</label>
+            <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="dr-delete-after" style="width:16px;height:16px;accent-color:var(--accent);"> Hapus file lokal setelah berhasil diarsipkan ke Drive</label>
+          </div>
+          <div style="margin-top:14px"><button class="btn btn-p" onclick="saveDriveConfig()">💾 SIMPAN KONFIGURASI DRIVE</button></div>
+          <div id="dr-save-result" style="margin-top:10px;font-size:11px;"></div>
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);margin-top:10px">ID folder = bagian setelah <code>/folders/</code> di URL folder Google Drive. Folder harus bisa diakses akun Google yang dihubungkan di bawah.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">🔗 HUBUNGKAN GOOGLE DRIVE</span><span id="dr-conn-badge" class="pill p-muted">Belum terhubung</span></div>
+        <div class="card-body">
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);margin-bottom:12px">Aktivasi memakai akun Google Anda (device-code, seperti login YouTube). Proyek Google Cloud di <code>client_secret.json</code> harus mengaktifkan <b style="color:var(--text)">Google Drive API</b>.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-p" onclick="connectDrive()">🔗 HUBUNGKAN GOOGLE DRIVE</button>
+            <button class="btn btn-g" onclick="disconnectDrive()">⏻ Putuskan Drive</button>
+          </div>
+          <div id="dr-connect-box" style="margin-top:12px;font-size:11px;"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">🧪 TES KONEKSI</span></div>
+        <div class="card-body">
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);margin-bottom:12px">Pemeriksaan dilakukan <b style="color:var(--text)">di server</b> (token tidak pernah dikirim ke browser).</div>
+          <button class="btn btn-p" onclick="testDrive()">🧪 TES KONEKSI DRIVE</button>
+          <div id="dr-test-result" style="margin-top:12px;font-size:11px;"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">⚠️ CATATAN DRIVE</span></div>
+        <div class="card-body" style="font-size:11.5px;color:var(--text2);line-height:1.7">
+          • Token Drive tersimpan di file <code>/root/keibotmod/drive_token.json</code> di VPS (hanya bisa dibaca root) dan tidak pernah masuk GitHub.<br>
+          • <b>Instal ulang menghapus token &amp; konfigurasi:</b> <code>install.sh</code> menghapus folder keibotmod lalu clone baru, sehingga <code>drive_token.json</code> dan <code>config.json</code> ikut terhapus. Setelah instal ulang, hubungkan ulang Google Drive dan isi lagi ID foldernya.<br>
+          • Galeri Drive hanya dipakai saat mode <b>Drive</b> aktif (disk hampir penuh). File yang diunduh dari Drive tersimpan di folder galeri channel seperti file lokal biasa — tidak pernah dihapus otomatis.
+        </div>
+      </div>
+    </div>
+
   </div>
 </main>
 <nav class="bottom-nav">
@@ -1419,7 +1497,7 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
         <span style="font-size:24px;">📖</span>
         <div>
           <div style="font-size:15px; font-weight:800; color:var(--text); letter-spacing:0.5px;">PANDUAN LENGKAP & SOLUSI KENDALA KEIBOT</div>
-          <div style="font-size:11px; color:var(--muted);">Petunjuk alur kerja, integrasi Google API &amp; API Agen, dan penanganan masalah umum</div>
+          <div style="font-size:11px; color:var(--muted);">Petunjuk alur kerja, integrasi Google API, API Agen &amp; Google Drive, dan penanganan masalah umum</div>
         </div>
       </div>
       <button onclick="closeGuideModal()" style="background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:4px 8px; border-radius:6px; transition:0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--muted)'">✕</button>
@@ -1438,6 +1516,9 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
       </button>
       <button id="gtab-btn-4" class="guide-tab-btn" onclick="switchGuideTab(4)" style="padding:12px 18px; border:none; background:none; font-family:var(--font-m); font-size:11px; font-weight:700; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer;">
         🔑 API Agen
+      </button>
+      <button id="gtab-btn-5" class="guide-tab-btn" onclick="switchGuideTab(5)" style="padding:12px 18px; border:none; background:none; font-family:var(--font-m); font-size:11px; font-weight:700; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer;">
+        ☁️ Google Drive
       </button>
     </div>
 
@@ -1669,6 +1750,52 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
         </div>
       </div>
 
+      <div id="gtab-content-5" style="display:none;">
+        <div style="margin-bottom:18px; padding:12px 16px; background:var(--accent-dim); border:1px solid rgba(0,212,255,0.2); border-radius:8px;">
+          <strong style="color:var(--accent); display:block; margin-bottom:4px;">☁️ Google Drive — Galeri dari Drive Saat Disk VPS Hampir Penuh</strong>
+          Kalau disk VPS menipis, KeiBot otomatis mengambil file galeri (audio, background, thumbnail) dari folder Google Drive Anda — bukan dari disk lokal. Menu <b>☁️ Google Drive</b> di sidebar (bagian INTEGRASI) menampilkan status, konfigurasi, dan koneksinya.
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px;">
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--accent); display:block; margin-bottom:6px;">🔄 Cara Kerja Mode Drive</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              • <b>Mode Lokal (normal):</b> galeri dibaca dari disk VPS seperti biasa.<br>
+              • <b>Mode Drive (otomatis):</b> aktif kalau disk bebas tinggal di bawah batas (bawaan 5 GB) ATAU disk terpakai di atas batas (bawaan 85%). File yang belum ada di disk diunduh dari folder Drive ke folder galeri channel, lalu render memakai file itu.<br>
+              • File yang sudah diunduh dari Drive tersimpan di folder galeri seperti file lokal biasa — tidak pernah dihapus otomatis.<br>
+              • Kalau Drive belum terhubung atau folder belum diisi, KeiBot tetap memakai galeri lokal — render tidak pernah gagal karena Drive.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--accent); display:block; margin-bottom:6px;">🔗 Cara Menghubungkan (3 Langkah)</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              <b>1.</b> Pastikan file <code>client_secret.json</code> sudah diunggah (Settings → API Google) dan proyek Google Cloud-nya mengaktifkan <b>Google Drive API</b>.<br>
+              <b>2.</b> Di menu <b>☁️ Google Drive</b>, klik <b>🔗 HUBUNGKAN GOOGLE DRIVE</b> — buka link yang muncul, lalu masukkan kode yang ditampilkan.<br>
+              <b>3.</b> Isi <b>ID folder Drive</b> untuk Audio, Background, dan Thumbnail (ID = bagian setelah <code>/folders/</code> di URL folder), lalu klik <b>💾 SIMPAN</b>. Folder harus bisa diakses akun Google yang dihubungkan.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--accent); display:block; margin-bottom:6px;">📁 Arsip Render ke Drive (Opsional)</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              Centang <b>Arsipkan hasil render ke folder Drive</b> untuk mengunggah video hasil render (tujuan VPS) ke folder Drive. Kalau dicentang juga <b>Hapus file lokal setelah berhasil diarsipkan</b>, file lokal dihapus dan tautan unduhan di riwayat mengarah ke Drive — disk VPS jadi lega. Opsi ini hanya berlaku untuk render dengan tujuan VPS.
+            </p>
+          </div>
+
+          <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px;">
+            <strong style="font-size:13px; color:var(--yellow); display:block; margin-bottom:6px;">🔐 Token &amp; Keamanan</strong>
+            <p style="color:var(--text2); font-size:11.5px;">
+              Token Drive tersimpan di file <code>/root/keibotmod/drive_token.json</code> di VPS (hanya bisa dibaca root) dan <b>tidak pernah masuk GitHub</b> maupun ditampilkan di panel.<br>
+              • <b>Instal ulang menghapus token &amp; konfigurasi:</b> <code>install.sh</code> menghapus folder keibotmod lalu clone baru, sehingga <code>drive_token.json</code> dan <code>config.json</code> ikut terhapus. Setelah instal ulang, hubungkan ulang Google Drive dan isi lagi ID foldernya.<br>
+              • Kalau mode galeri tetap <b>Lokal</b> padahal disk sudah tipis, periksa ID folder Drive dan koneksinya di menu Google Drive, lalu klik <b>🧪 TES KONEKSI</b>.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
     </div>
 
     <!-- Modal Footer -->
@@ -1719,7 +1846,7 @@ function closeGuideModal() {
 }
 
 function switchGuideTab(tabNum) {
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 5; i++) {
     const btn = document.getElementById('gtab-btn-' + i);
     const content = document.getElementById('gtab-content-' + i);
     if (btn) {
@@ -1788,7 +1915,8 @@ const PAGE_META = {
   output:    { t: 'Output Videos',   s: 'Lihat & download video hasil render' },
   logs:      { t: 'System Logs',     s: 'Real-time log aplikasi & error' },
   settings:  { t: 'Settings',        s: 'API Google, channel & konfigurasi' },
-  agentapi:  { t: 'API Agen',        s: 'Akses agen AI (Max) via API key' }
+  agentapi:  { t: 'API Agen',        s: 'Akses agen AI (Max) via API key' },
+  drive:    { t: 'Google Drive',    s: 'Galeri dari Drive saat disk VPS hampir penuh' }
 };
 
 function go(id, el) {
@@ -1805,6 +1933,7 @@ function go(id, el) {
   document.getElementById('tb-sub').textContent = PAGE_META[id].s;
   if (id === 'dashboard') fetchAnalytics();
   if (id === 'agentapi') loadAgentApiPanel();
+  if (id === 'drive') loadDrivePanel();
   if (id === 'batch') {
     refreshBatchDropdowns();
     setTimeout(initCanvas, 50);
@@ -1870,6 +1999,153 @@ function testAgentApi() {
     toast(d.status === 'ok' ? 'Tes koneksi Agent API berhasil' : 'Tes koneksi menemukan masalah', d.status === 'ok' ? 'success' : 'error');
   }).catch(() => {
     if (box) box.innerHTML = '<span style="color:var(--accent2)">❌ Gagal menghubungi server untuk tes koneksi.</span>';
+  });
+}
+
+// ────────────────────────────────────────────────────────
+//  GOOGLE DRIVE — PANEL
+// ────────────────────────────────────────────────────────
+function loadDrivePanel() {
+  const badge = document.getElementById('drive-badge');
+  if (badge) { badge.textContent = 'Mengecek...'; badge.className = 'pill p-muted'; }
+  fetch('/api/panel_drive_status').then(r => r.json()).then(d => {
+    const modeLabel = { 'drive': 'DRIVE', 'lokal': 'LOKAL', 'belum-dikonfigurasi': 'BELUM DIKONFIGURASI', 'nonaktif': 'NONAKTIF' };
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const mode = d.mode || 'nonaktif';
+    if (badge) {
+      badge.textContent = d.connected ? '🟢 TERHUBUNG' : (d.configured ? '🟡 TERKONFIGURASI' : '🔴 BELUM DIHUBUNGKAN');
+      badge.className = 'pill ' + (d.connected ? 'p-green' : (d.configured ? 'p-yellow' : 'p-red'));
+    }
+    set('dr-mode', modeLabel[mode] || mode.toUpperCase());
+    set('dr-mode-note', d.use_drive_reason || '');
+    const disk = d.disk || {};
+    set('dr-free', (disk.free_gb ?? '–') + ' GB');
+    set('dr-total', 'dari ' + (disk.total_gb ?? '–') + ' GB total');
+    set('dr-used-pct', (disk.pct_used ?? '–') + '%');
+    set('dr-used', (disk.used_gb ?? '–') + ' GB terpakai');
+    const bar = document.getElementById('dr-disk-bar');
+    if (bar) {
+      bar.style.width = Math.min(100, disk.pct_used || 0) + '%';
+      bar.style.background = (disk.pct_used || 0) >= 85 ? 'var(--accent2)' : ((disk.pct_used || 0) >= 70 ? 'var(--yellow)' : 'var(--accent)');
+    }
+    const user = d.drive_user || {};
+    set('dr-user', user.email || (d.connected ? 'Terhubung' : '–'));
+    set('dr-user-note', user.name || (d.connected ? '' : 'Belum terhubung'));
+    const cb = document.getElementById('dr-conn-badge');
+    if (cb) {
+      cb.textContent = d.connected ? '🟢 Terhubung' : 'Belum terhubung';
+      cb.className = 'pill ' + (d.connected ? 'p-green' : 'p-muted');
+    }
+    const cfg = d.config || {};
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v === undefined || v === null) ? '' : v; };
+    setVal('dr-folder-audios', cfg.folder_audios);
+    setVal('dr-folder-backgrounds', cfg.folder_backgrounds);
+    setVal('dr-folder-thumbnails', cfg.folder_thumbnails);
+    setVal('dr-folder-renders', cfg.folder_renders);
+    setVal('dr-free-threshold', cfg.free_gb_threshold);
+    setVal('dr-usage-threshold', cfg.usage_pct_threshold);
+    const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+    setChk('dr-upload-renders', cfg.upload_renders);
+    setChk('dr-delete-after', cfg.delete_after_upload);
+  }).catch(() => {
+    if (badge) { badge.textContent = 'GAGAL MEMUAT'; badge.className = 'pill p-red'; }
+  });
+}
+
+function saveDriveConfig() {
+  const box = document.getElementById('dr-save-result');
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const chk = id => { const el = document.getElementById(id); return el ? el.checked : false; };
+  const body = {
+    folder_audios: val('dr-folder-audios'),
+    folder_backgrounds: val('dr-folder-backgrounds'),
+    folder_thumbnails: val('dr-folder-thumbnails'),
+    folder_renders: val('dr-folder-renders'),
+    free_gb_threshold: parseFloat(val('dr-free-threshold')),
+    usage_pct_threshold: parseFloat(val('dr-usage-threshold')),
+    upload_renders: chk('dr-upload-renders'),
+    delete_after_upload: chk('dr-delete-after')
+  };
+  if (box) box.innerHTML = '<span style="color:var(--muted)">⏳ Menyimpan...</span>';
+  fetch('/api/panel_drive_save', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+    .then(r => r.json()).then(d => {
+      if (box) box.innerHTML = d.status === 'ok'
+        ? '<span style="color:var(--green)">✅ ' + (d.message || 'Tersimpan.') + '</span>'
+        : '<span style="color:var(--accent2)">❌ ' + (d.error || 'Gagal menyimpan.') + '</span>';
+      if (d.status === 'ok') { toast('Konfigurasi Drive disimpan', 'success'); loadDrivePanel(); }
+      else toast('Gagal menyimpan konfigurasi Drive', 'error');
+    }).catch(() => {
+      if (box) box.innerHTML = '<span style="color:var(--accent2)">❌ Gagal menghubungi server.</span>';
+    });
+}
+
+function testDrive() {
+  const box = document.getElementById('dr-test-result');
+  if (box) box.innerHTML = '<span style="color:var(--muted)">⏳ Menguji koneksi dari server...</span>';
+  fetch('/api/panel_drive_test', {method: 'POST'}).then(r => r.json()).then(d => {
+    if (!box) return;
+    const rows = (d.checks || []).map(c =>
+      `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px dashed var(--border);"><span>${c.ok ? '✅' : '❌'}</span><span style="flex:1"><b>${c.name}</b><br><span style="color:var(--muted)">${c.detail || ''}</span></span></div>`
+    ).join('');
+    box.innerHTML = `<div style="font-weight:700;color:${d.status === 'ok' ? 'var(--green)' : 'var(--accent2)'};margin-bottom:6px">${d.result || ''}</div>${rows}` +
+      `<div style="color:var(--muted);margin-top:8px">Mode galeri: ${d.mode || '–'} · ${d.use_drive_reason || ''}</div>`;
+    toast(d.status === 'ok' ? 'Tes koneksi Drive berhasil' : 'Tes koneksi menemukan masalah', d.status === 'ok' ? 'success' : 'error');
+  }).catch(() => {
+    if (box) box.innerHTML = '<span style="color:var(--accent2)">❌ Gagal menghubungi server untuk tes koneksi.</span>';
+  });
+}
+
+let drivePollTimer = null;
+function connectDrive() {
+  const box = document.getElementById('dr-connect-box');
+  if (box) box.innerHTML = '<span style="color:var(--muted)">⏳ Meminta kode aktivasi dari Google...</span>';
+  fetch('/api/panel_drive_device', {method: 'POST'}).then(r => r.json()).then(d => {
+    if (!box) return;
+    if (d.status !== 'ok') {
+      box.innerHTML = '<span style="color:var(--accent2)">❌ ' + (d.error || 'Gagal memulai aktivasi.') + '</span>';
+      return;
+    }
+    box.innerHTML =
+      `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;line-height:1.8">
+        <b>Langkah 1:</b> Buka <a href="${d.verification_url}" target="_blank" style="color:var(--accent)">${d.verification_url}</a> di browser (HP/laptop).<br>
+        <b>Langkah 2:</b> Masukkan kode ini: <code style="font-size:16px;font-weight:800;color:var(--green)">${d.user_code}</code>
+        <button class="btn btn-g btn-sm" onclick="navigator.clipboard && navigator.clipboard.writeText('${d.user_code}')">📋 Copy Kode</button><br>
+        <span id="dr-poll-status" style="color:var(--muted)">⏳ Menunggu Anda memasukkan kode...</span>
+      </div>`;
+    const poll = () => {
+      fetch('/api/panel_drive_poll', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({device_code: d.device_code})})
+        .then(r => r.json()).then(p => {
+          const st = document.getElementById('dr-poll-status');
+          if (p.status === 'success') {
+            if (drivePollTimer) clearTimeout(drivePollTimer);
+            if (st) st.innerHTML = '🎉 <b style="color:var(--green)">Berhasil! Google Drive terhubung.</b>';
+            toast('Google Drive terhubung', 'success');
+            loadDrivePanel();
+          } else if (p.status === 'pending') {
+            drivePollTimer = setTimeout(poll, p.interval || 5000);
+          } else {
+            if (drivePollTimer) clearTimeout(drivePollTimer);
+            if (st) st.innerHTML = '❌ Gagal: ' + (p.error || 'Terjadi kesalahan.');
+          }
+        }).catch(() => {
+          drivePollTimer = setTimeout(poll, 10000);
+        });
+    };
+    drivePollTimer = setTimeout(poll, 5000);
+  }).catch(() => {
+    if (box) box.innerHTML = '<span style="color:var(--accent2)">❌ Gagal menghubungi server.</span>';
+  });
+}
+
+function disconnectDrive() {
+  const box = document.getElementById('dr-connect-box');
+  fetch('/api/panel_drive_disconnect', {method: 'POST'}).then(r => r.json()).then(d => {
+    if (box) box.innerHTML = d.status === 'ok'
+      ? '<span style="color:var(--green)">✅ ' + (d.message || 'Diputuskan.') + '</span>'
+      : '<span style="color:var(--accent2)">❌ ' + (d.error || 'Gagal memutuskan.') + '</span>';
+    if (d.status === 'ok') { toast('Google Drive diputuskan', 'success'); loadDrivePanel(); }
+  }).catch(() => {
+    if (box) box.innerHTML = '<span style="color:var(--accent2)">❌ Gagal menghubungi server.</span>';
   });
 }
 
