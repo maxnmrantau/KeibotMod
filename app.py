@@ -2525,9 +2525,13 @@ def background_worker():
                             'snippet': {'title': task['title'], 'description': task.get('description', ''), 'tags': tags_list, 'categoryId': '10'},
                             'status': {'privacyStatus': task.get('privacy', 'public')}
                         }
-                        if sch_obj > datetime.now():
-                            wib = ZoneInfo("Asia/Jakarta")
-                            sch_aware = sch_obj.replace(tzinfo=wib)
+                        # FIX zona waktu: publish_date adalah waktu dinding WIB
+                        # (dari input datetime-local browser Bos), jadi bandingkan
+                        # secara timezone-aware terhadap WIB — bukan jam lokal
+                        # server (VPS berjalan di CST, 1 jam lebih maju dari WIB).
+                        wib = ZoneInfo("Asia/Jakarta")
+                        sch_aware = sch_obj.replace(tzinfo=wib)
+                        if sch_aware > datetime.now(wib):
                             sch_utc = sch_aware.astimezone(timezone.utc)
                             body['status']['publishAt'] = sch_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
                             body['status']['privacyStatus'] = 'private'
