@@ -2105,17 +2105,33 @@ def background_worker():
         # 🔥 SMART COOLDOWN SYSTEM (PUTAR BALIK ANTREAN) 🔥
         if yt_id in channel_cooldowns:
             if time.time() < channel_cooldowns[yt_id]:
-                sisa_menit = max(1, int((channel_cooldowns[yt_id] - time.time()) / 60))
-                
+                resume_at = channel_cooldowns[yt_id]
+                sisa_menit = max(1, int((resume_at - time.time()) / 60))
+
                 with db_lock:
                     for d in active_tasks:
                         if d['id'] == task_id:
                             d['status'] = f"Antrean Ditunda (Cooldown YT {sisa_menit} mnt) ⏳"
+                            d['resume_at'] = resume_at
                 save_tasks_db()
-                
-                render_queue.put(task)
+
                 render_queue.task_done()
-                time.sleep(5) 
+                # FIX spin loop: jangan antre ulang langsung (dulu: put +
+                # sleep 5 detik, berputar ~17 ribu kali untuk cooldown 24 jam
+                # sambil menulis ulang tasks_db.json tiap putaran). Jadwalkan
+                # antre ulang sekali saat cooldown habis; worker bebas
+                # mengerjakan task lain sementara itu.
+                def _reenqueue_after_cooldown(_task=task, _tid=task_id, _at=resume_at):
+                    try:
+                        time.sleep(max(0, _at - time.time()))
+                        with db_lock:
+                            alive = any(t.get('id') == _tid and t.get('blueprint') for t in active_tasks)
+                            stopped = stop_flags.get(_tid)
+                        if alive and not stopped:
+                            render_queue.put(_task)
+                    except Exception:
+                        pass
+                threading.Thread(target=_reenqueue_after_cooldown, daemon=True).start()
                 continue
             else:
                 del channel_cooldowns[yt_id]
