@@ -149,8 +149,13 @@ def agent_status():
     failed = sum(1 for t in history if "Gagal" in str(t.get("status", "")))
     yt_connected = any("Connected" in str(c.get("status", ""))
                        for c in channels)
+    try:
+        drive = _dep("get_drive_status")()
+    except Exception:
+        drive = {"connected": False, "mode": "nonaktif"}
     return jsonify({
         "status": "ok",
+        "drive": drive,
         "counts": {
             "batches_active": len(active),
             "queued": queued,
