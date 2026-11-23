@@ -5,9 +5,9 @@ diambil dari folder Google Drive Bos, bukan dari disk lokal — supaya render
 tetap jalan dan VPS tidak terganggu.
 
 Cara kerja:
-- Konfigurasi tersimpan di config.json (key "drive"): 4 ID folder Drive
-  (audios, backgrounds, thumbnails, renders), ambang batas disk, dan opsi
-  arsip render. File ini sudah di-.gitignore.
+- Konfigurasi tersimpan di config.json (key "drive"): 3 ID folder Drive
+  (audios, backgrounds, thumbnails) dan ambang batas disk.
+  File ini sudah di-.gitignore.
 - Token OAuth tersimpan di drive_token.json (di-.gitignore) — diperoleh
   lewat device-code flow yang sama dengan login YouTube (client_secret.json
   yang sama; proyek Google Cloud-nya harus mengaktifkan Drive API).
@@ -62,11 +62,8 @@ DEFAULT_CONFIG = {
     "folder_audios": "",
     "folder_backgrounds": "",
     "folder_thumbnails": "",
-    "folder_renders": "",
     "free_gb_threshold": 5.0,
     "usage_pct_threshold": 85.0,
-    "upload_renders": False,
-    "delete_after_upload": False,
 }
 
 
@@ -95,10 +92,8 @@ def load_drive_config():
     except (TypeError, ValueError):
         cfg["usage_pct_threshold"] = 85.0
     for key in ("folder_audios", "folder_backgrounds",
-                "folder_thumbnails", "folder_renders"):
+                "folder_thumbnails"):
         cfg[key] = str(cfg.get(key) or "").strip()
-    cfg["upload_renders"] = bool(cfg.get("upload_renders"))
-    cfg["delete_after_upload"] = bool(cfg.get("delete_after_upload"))
     return cfg
 
 
@@ -114,7 +109,7 @@ def save_drive_config(patch):
         cfg = load_drive_config()
         for key, val in patch.items():
             if key in ("folder_audios", "folder_backgrounds",
-                       "folder_thumbnails", "folder_renders"):
+                       "folder_thumbnails"):
                 if val is None:
                     val = ""
                 val = str(val).strip()
@@ -132,8 +127,6 @@ def save_drive_config(patch):
                 if key == "usage_pct_threshold" and not (50 <= num <= 99):
                     return False, "Batas pemakaian disk harus 50–99%."
                 cfg[key] = num
-            elif key in ("upload_renders", "delete_after_upload"):
-                cfg[key] = bool(val)
             # Key tidak dikenal diabaikan.
         try:
             data = {}
@@ -474,7 +467,7 @@ def status_summary():
         "module_loaded": True,
         "configured": bool(any(cfg.get(k) for k in (
             "folder_audios", "folder_backgrounds",
-            "folder_thumbnails", "folder_renders"))),
+            "folder_thumbnails"))),
         "connected": False,
         "token_exists": os.path.exists(DRIVE_TOKEN_FILE),
         "mode": drive_mode(cfg),
@@ -485,7 +478,6 @@ def status_summary():
             "audios": bool(cfg.get("folder_audios")),
             "backgrounds": bool(cfg.get("folder_backgrounds")),
             "thumbnails": bool(cfg.get("folder_thumbnails")),
-            "renders": bool(cfg.get("folder_renders")),
         },
         "config": cfg,
         "drive_user": None,
