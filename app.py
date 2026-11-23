@@ -846,21 +846,32 @@ class BackgroundManager:
     def get_frame(self):
         if self.static_bg is not None:
             return self.static_bg.copy()
-        if self.cap is not None and self.cap.isOpened():
-            ret, frame = self.cap.read()
-            if not ret or frame is None:
-                # Loop video dari awal atau ganti ke background berikutnya
-                if len(self.bg_paths) > 1:
-                    self.idx = (self.idx + 1) % len(self.bg_paths)
-                    self.load_current()
-                    return self.get_frame()
-                else:
+        # FIX: dulu rekursi tanpa batas — semua background video rusak
+        # (read() selalu gagal) -> RecursionError. Sekarang loop dibatasi
+        # maksimal len(bg_paths) percobaan, lalu frame hitam.
+        for _attempt in range(max(1, len(self.bg_paths))):
+            if self.cap is not None and self.cap.isOpened():
+                ret, frame = self.cap.read()
+                if ret and frame is not None:
+                    if frame.shape[1] != self.w or frame.shape[0] != self.h:
+                        frame = cv2.resize(frame, (self.w, self.h))
+                    return frame
+                # Video habis/rusak: kalau hanya 1 background, putar ulang
+                if len(self.bg_paths) <= 1:
                     self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, frame = self.cap.read()
-            if ret and frame is not None:
-                if frame.shape[1] != self.w or frame.shape[0] != self.h:
-                    frame = cv2.resize(frame, (self.w, self.h))
-                return frame
+                    if ret and frame is not None:
+                        if frame.shape[1] != self.w or frame.shape[0] != self.h:
+                            frame = cv2.resize(frame, (self.w, self.h))
+                        return frame
+                    break
+            # Ganti ke background berikutnya (atau keluar kalau habis)
+            if len(self.bg_paths) <= 1:
+                break
+            self.idx = (self.idx + 1) % len(self.bg_paths)
+            self.load_current()
+            if self.static_bg is not None:
+                return self.static_bg.copy()
         return np.zeros((self.h, self.w, 3), dtype=np.uint8)
         
     def close(self):
