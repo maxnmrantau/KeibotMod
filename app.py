@@ -2858,14 +2858,34 @@ def get_channels():
 @app.route('/api/delete_channel', methods=['POST'])
 def delete_channel():
     yt_id = request.form.get('yt_id')
-    global database_channel, system_notifications
+    global database_channel, system_notifications, active_tasks, history_tasks
     deleted_names = [c.get('name', '').lower() for c in database_channel if c['yt_id'] == yt_id]
     database_channel = [c for c in database_channel if c['yt_id'] != yt_id]
     save_channels(database_channel)
     channel_cooldowns.pop(yt_id, None)
+    # FIX: batalkan task aktif channel ini — dulu task tetap jalan sampai
+    # selesai meski channel sudah dihapus. Set stop flag (worker melewati
+    # blueprint yang di-flag) + pindahkan ke riwayat. Folder galeri
+    # sengaja TIDAK dihapus (berisi musik/gambar milik Bos).
+    cancelled = 0
     with db_lock:
+        for t in list(active_tasks):
+            t_yt = t.get('yt_id') or t.get('blueprint', {}).get('yt_id')
+            if t_yt == yt_id:
+                stop_flags[t['id']] = True
+                t['status'] = "Dibatalkan (Channel Dihapus) 🛑"
+                t.pop('blueprint', None)
+                history_tasks.insert(0, t)
+                active_tasks.remove(t)
+                cancelled += 1
+        if len(history_tasks) > 50:
+            del history_tasks[50:]
         system_notifications = [n for n in system_notifications if not any(d_name in n.get('msg', '').lower() for d_name in deleted_names if d_name) and yt_id not in n.get('msg', '')]
-    return jsonify({"status": "success", "message": "Channel dihapus!"})
+    save_tasks_db()
+    msg = "Channel dihapus!"
+    if cancelled:
+        msg += f" {cancelled} task dibatalkan."
+    return jsonify({"status": "success", "message": msg})
 
 # --- PRESET API ---
 @app.route('/api/save_preset', methods=['POST'])
