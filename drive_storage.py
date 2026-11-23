@@ -20,6 +20,12 @@ Cara kerja:
 import json
 import os
 import shutil
+import threading
+
+# FIX: tulis config.json / drive_token.json tanpa kunci bisa saling timpa
+# antar thread (baca-ubah-tulis: patch yang satu hilang, atau file JSON
+# terpotong di tengah). Satu kunci untuk semua tulis file Drive di modul ini.
+_drive_file_lock = threading.Lock()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DRIVE_TOKEN_FILE = os.path.join(BASE_DIR, "drive_token.json")
@@ -102,43 +108,46 @@ def save_drive_config(patch):
     Mengembalikan (True, None) atau (False, pesan_error)."""
     if not isinstance(patch, dict):
         return False, "Data konfigurasi tidak valid."
-    cfg = load_drive_config()
-    for key, val in patch.items():
-        if key in ("folder_audios", "folder_backgrounds",
-                   "folder_thumbnails", "folder_renders"):
-            if val is None:
-                val = ""
-            val = str(val).strip()
-            # ID folder Drive berupa huruf/angka/underscore/dash (atau kosong).
-            if val and not all(c.isalnum() or c in "-_" for c in val):
-                return False, f"ID folder {key} tidak valid."
-            cfg[key] = val
-        elif key in ("free_gb_threshold", "usage_pct_threshold"):
-            try:
-                num = float(val)
-            except (TypeError, ValueError):
-                return False, f"Nilai {key} harus angka."
-            if key == "free_gb_threshold" and not (0.5 <= num <= 50):
-                return False, "Batas disk bebas harus 0,5–50 GB."
-            if key == "usage_pct_threshold" and not (50 <= num <= 99):
-                return False, "Batas pemakaian disk harus 50–99%."
-            cfg[key] = num
-        elif key in ("upload_renders", "delete_after_upload"):
-            cfg[key] = bool(val)
-        # Key tidak dikenal diabaikan.
-    try:
-        data = {}
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-        if not isinstance(data, dict):
+    # Kunci selama SELURUH baca-ubah-tulis (termasuk load_drive_config di
+    # awal) supaya dua penyimpanan bersamaan tidak saling menimpa patch.
+    with _drive_file_lock:
+        cfg = load_drive_config()
+        for key, val in patch.items():
+            if key in ("folder_audios", "folder_backgrounds",
+                       "folder_thumbnails", "folder_renders"):
+                if val is None:
+                    val = ""
+                val = str(val).strip()
+                # ID folder Drive berupa huruf/angka/underscore/dash (atau kosong).
+                if val and not all(c.isalnum() or c in "-_" for c in val):
+                    return False, f"ID folder {key} tidak valid."
+                cfg[key] = val
+            elif key in ("free_gb_threshold", "usage_pct_threshold"):
+                try:
+                    num = float(val)
+                except (TypeError, ValueError):
+                    return False, f"Nilai {key} harus angka."
+                if key == "free_gb_threshold" and not (0.5 <= num <= 50):
+                    return False, "Batas disk bebas harus 0,5–50 GB."
+                if key == "usage_pct_threshold" and not (50 <= num <= 99):
+                    return False, "Batas pemakaian disk harus 50–99%."
+                cfg[key] = num
+            elif key in ("upload_renders", "delete_after_upload"):
+                cfg[key] = bool(val)
+            # Key tidak dikenal diabaikan.
+        try:
             data = {}
-        data["drive"] = cfg
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-        return True, None
-    except Exception as e:
-        return False, f"Gagal menyimpan konfigurasi: {type(e).__name__}"
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, "r") as f:
+                    data = json.load(f)
+            if not isinstance(data, dict):
+                data = {}
+            data["drive"] = cfg
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(data, f, indent=4)
+            return True, None
+        except Exception as e:
+            return False, f"Gagal menyimpan konfigurasi: {type(e).__name__}"
 
 
 # ── Disk ─────────────────────────────────────────────────────────
@@ -287,12 +296,14 @@ def poll_device_flow(device_code):
             client_secret=client_secret,
             scopes=DRIVE_SCOPES,
         )
-        with open(DRIVE_TOKEN_FILE, "w") as f:
-            f.write(creds_obj.to_json())
-        try:
-            os.chmod(DRIVE_TOKEN_FILE, 0o600)
-        except Exception:
-            pass
+        # Tulis token di bawah kunci (lihat _drive_file_lock di atas).
+        with _drive_file_lock:
+            with open(DRIVE_TOKEN_FILE, "w") as f:
+                f.write(creds_obj.to_json())
+            try:
+                os.chmod(DRIVE_TOKEN_FILE, 0o600)
+            except Exception:
+                pass
         return True, None
     except Exception:
         return False, "Gagal menyimpan token Drive."
@@ -316,8 +327,10 @@ def get_service():
         creds = Credentials.from_authorized_user_info(info, DRIVE_SCOPES)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            with open(DRIVE_TOKEN_FILE, "w") as f:
-                f.write(creds.to_json())
+            # Refresh (jaringan) di luar kunci; hanya tulis file di bawah kunci.
+            with _drive_file_lock:
+                with open(DRIVE_TOKEN_FILE, "w") as f:
+                    f.write(creds.to_json())
         service = build("drive", "v3", credentials=creds)
         return service, None
     except Exception:
@@ -327,8 +340,9 @@ def get_service():
 def disconnect():
     """Putuskan Drive: hapus drive_token.json. Mengembalikan True/False."""
     try:
-        if os.path.exists(DRIVE_TOKEN_FILE):
-            os.remove(DRIVE_TOKEN_FILE)
+        with _drive_file_lock:
+            if os.path.exists(DRIVE_TOKEN_FILE):
+                os.remove(DRIVE_TOKEN_FILE)
         return True
     except Exception:
         return False
