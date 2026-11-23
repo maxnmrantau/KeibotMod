@@ -15,3 +15,6 @@ __pycache__/
 
 # Kunci API agen (jangan pernah di-commit)
 .agent.env
+
+# Token Google Drive (jangan pernah di-commit)
+drive_token.json
