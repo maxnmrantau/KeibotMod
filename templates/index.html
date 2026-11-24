@@ -2499,43 +2499,81 @@ async function deleteAllGallery() {
   loadGallery();
 }
 
-function handleGalleryUpload(event) {
+async function handleGalleryUpload(event) {
   if (!currentGalleryCh) {
     toast('Pilih channel dulu sebelum upload!', 'warn');
     event.target.value = '';
     return;
   }
-  const files = event.target.files;
-  if (!files || !files.length) return;
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
 
-  const fd = new FormData();
-  fd.append('yt_id', currentGalleryCh);
-  fd.append('type', currentGalleryType);
-  for (let i = 0; i < files.length; i++) fd.append('files[]', files[i]);
+  // FIX 24 Nov: dulu semua file dikirim dalam SATU request — 30 MP3
+  // sekaligus tembus batas server (500 MB) -> HTTP 413, tidak ada file
+  // yang tersimpan, dan panel hanya menampilkan "Upload gagal" tanpa
+  // penjelasan. Sekarang dikirim bertahap 5 file per request.
+  const BATCH_SIZE = 5;
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  let doneBytes = 0, savedTotal = 0;
+  const failed = [];
 
   const dropZone = document.getElementById('gallery-drop-zone');
   const inputHtml = `<input type="file" id="gallery-file-input" multiple onchange="handleGalleryUpload(event)">`;
-  dropZone.style.pointerEvents = 'none'; 
+  dropZone.style.pointerEvents = 'none';
   dropZone.innerHTML = `
     <div style="padding:10px;">
         <div class="uz-icon">⏳</div>
-        <div class="uz-text">Mengupload ${files.length} file...</div>
+        <div class="uz-text" id="up-status">Mengupload 0/${files.length} file...</div>
         <div class="pb-bg" style="margin: 15px auto; width: 80%; background: var(--border); height: 8px; border-radius: 4px;">
             <div class="pb-fill" id="up-bar" style="width: 0%; background: var(--accent); height: 100%; border-radius: 4px; transition: width 0.2s;"></div>
         </div>
         <div class="uz-sub" id="up-pct" style="color: var(--accent); font-weight: bold; font-size: 14px;">0%</div>
     </div>
   `;
-
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/upload_gallery', true);
-  xhr.upload.onprogress = function(e) {
-    if (e.lengthComputable) {
-      const percent = Math.round((e.loaded / e.total) * 100);
-      document.getElementById('up-bar').style.width = percent + '%';
-      document.getElementById('up-pct').textContent = percent + '%';
-    }
+  const setProgress = (loadedInBatch) => {
+    const pct = totalBytes ? Math.round(((doneBytes + loadedInBatch) / totalBytes) * 100) : 0;
+    const bar = document.getElementById('up-bar'), pctEl = document.getElementById('up-pct');
+    if (bar) bar.style.width = pct + '%';
+    if (pctEl) pctEl.textContent = pct + '%';
   };
+  const uploadBatch = (batch) => new Promise((resolve) => {
+    const fd = new FormData();
+    fd.append('yt_id', currentGalleryCh);
+    fd.append('type', currentGalleryType);
+    batch.forEach(f => fd.append('files[]', f));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload_gallery', true);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(e.loaded); };
+    xhr.onload = () => {
+      doneBytes += batch.reduce((s, f) => s + f.size, 0);
+      setProgress(0);
+      let d = null;
+      try { d = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status === 200 && d && d.status === 'success') {
+        const m = (d.message || '').match(/^(\d+) file berhasil/);
+        savedTotal += m ? parseInt(m[1], 10) : batch.length;
+        if (d.message && d.message.indexOf('gagal') !== -1) failed.push(d.message);
+      } else if (xhr.status === 413) {
+        failed.push('Batch gagal (413): ' + batch.map(f => f.name).join(', ') + ' — total ukuran melebihi batas server.');
+      } else {
+        failed.push(((d && d.message) || ('Batch gagal (HTTP ' + xhr.status + ')')) + ': ' + batch.map(f => f.name).join(', '));
+      }
+      resolve();
+    };
+    xhr.onerror = () => {
+      doneBytes += batch.reduce((s, f) => s + f.size, 0);
+      failed.push('Koneksi terputus saat mengupload: ' + batch.map(f => f.name).join(', '));
+      resolve();
+    };
+    xhr.send(fd);
+  });
+
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const batch = files.slice(i, i + BATCH_SIZE);
+    const statusEl = document.getElementById('up-status');
+    if (statusEl) statusEl.textContent = 'Mengupload ' + Math.min(i + BATCH_SIZE, files.length) + '/' + files.length + ' file...';
+    await uploadBatch(batch);
+  }
 
   const resetUI = () => {
     dropZone.style.pointerEvents = 'auto';
@@ -2549,15 +2587,14 @@ function handleGalleryUpload(event) {
         <div class="uz-sub" id="gallery-accept-hint">${hint}</div>
     `;
   };
-
-  xhr.onload = function() {
-    resetUI();
-    if (xhr.status === 200) {
-      toast('Upload Selesai! 🎉', 'success'); loadGallery(); 
-    } else { toast('Upload gagal', 'error'); }
-  };
-  xhr.onerror = function() { resetUI(); toast('❌ Koneksi terputus!', 'error'); };
-  xhr.send(fd);
+  resetUI();
+  if (failed.length === 0) {
+    toast('Upload Selesai! 🎉 ' + savedTotal + ' file berhasil.', 'success');
+  } else {
+    toast('Upload selesai: ' + savedTotal + ' berhasil, ' + failed.length + ' batch bermasalah.', 'warn');
+    alert('Sebagian upload gagal:\n\n' + failed.slice(0, 5).join('\n\n'));
+  }
+  loadGallery();
 }
 
 function deleteGalleryFile(name) {
