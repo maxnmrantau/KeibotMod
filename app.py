@@ -218,12 +218,14 @@ def get_system_stats():
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'))
 # FIX batas upload galeri: dulu tanpa batas apa pun — file raksasa/tipe apa
-# pun bisa di-upload sampai disk VPS penuh. 500 MB per permintaan.
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
+# pun bisa di-upload sampai disk VPS penuh. 2 GB per permintaan (naik dari
+# 500 MB, 24 Nov: 30 MP3 sekaligus tembus 500 MB -> 413, tidak ada yang
+# tersimpan). Upload panel kini juga dikirim bertahap 5 file/request.
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2 GB
 
 @app.errorhandler(413)
 def _request_too_large(_e):
-    return jsonify({"status": "error", "message": "File terlalu besar (maks 500 MB per permintaan)"}), 413
+    return jsonify({"status": "error", "message": "File terlalu besar (maks 2 GB per permintaan). Coba upload lebih sedikit file sekaligus."}), 413
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
