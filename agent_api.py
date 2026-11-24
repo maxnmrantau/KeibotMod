@@ -220,3 +220,23 @@ def agent_upload():
                         "error": "batch_id harus angka (id task)"}), 400
     payload, code = _dep("requeue_task")(batch_id)
     return jsonify(payload), code
+
+
+@agent_api.route("/api/agent/batch/<int:task_id>", methods=["GET"])
+def agent_batch_blueprint(task_id):
+    """Kembalikan pengaturan lengkap (blueprint) satu task aktif, agar
+    agen bisa meniru pengaturannya untuk batch berikutnya ("jadikan
+    template"). Hanya task AKTIF yang masih punya blueprint: begitu
+    task selesai/tayang atau dibatalkan, Keibot menghapus blueprint-nya
+    untuk menghemat tempat, jadi task seperti itu menjawab 404."""
+    for t in _dep("get_active_tasks")():
+        if t.get("id") == task_id:
+            bp = t.get("blueprint")
+            if not bp:
+                return jsonify({"status": "error",
+                                "error": "Task ini tidak punya pengaturan tersimpan (blueprint)"}), 404
+            return jsonify({"status": "ok",
+                            "task": _task_view(t),
+                            "blueprint": bp})
+    return jsonify({"status": "error",
+                    "error": "Task aktif tidak ditemukan (mungkin sudah tayang/selesai)"}), 404
