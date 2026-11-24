@@ -854,15 +854,9 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
             <div class="fg" id="custom-interval-wrap" style="display:none"><label class="fl">Interval Custom <small>(hari)</small></label><input type="number" id="bc-custom-interval" value="1" min="0.1" step="0.1" oninput="updateBatchPreview()"></div>
             <div class="fg" style="margin-bottom:18px; padding-bottom:18px; border-bottom:1px dashed var(--border2);">
               <label class="fl" style="color:var(--green); font-size:13px;">⏱️ Target Durasi Final Video</label>
-              <div id="bc-target-dur-sub" style="font-family:var(--font-m);font-size:10px;color:var(--muted);margin-bottom:8px">Sistem otomatis loop agar durasi pas.</div>
+              <div id="bc-target-dur-sub" style="font-family:var(--font-m);font-size:10px;color:var(--muted);margin-bottom:8px">Durasi video 100% mengikuti durasi asli file MP3 (tanpa potong &amp; tanpa loop).</div>
               <select id="bc-target-duration" onchange="onTargetDurationChange()" style="font-size:14px; font-weight:bold; background:rgba(0,232,135,.05); border-color:rgba(0,232,135,.3); color:var(--green);">
-                <option value="original">🎵 Sesuai Durasi Asli Audio (No Cut & No Loop)</option>
-                <option value="1">1 Jam (60 Menit)</option>
-                <option value="3">3 Jam</option>
-                <option value="5">5 Jam</option>
-                <option value="10" selected>10 Jam</option>
-                <option value="custom">⚙️ Custom Fixed (Jam)...</option>
-                <option value="random">🎲 ACAK (Range Menit)...</option>
+                <option value="original" selected>🎵 Sesuai Durasi Asli Audio (No Cut &amp; No Loop)</option>
               </select>
               <input type="number" id="bc-custom-duration" value="2" min="0.1" step="0.1" style="display:none; margin-top:8px; border-color:var(--accent);" placeholder="Jumlah jam" oninput="updateBatchPreview()">
               <div id="bc-random-duration-wrap" style="display:none; margin-top:8px; background:var(--card); padding:10px; border-radius:8px; border:1px dashed var(--border2);">
@@ -4721,13 +4715,18 @@ function applyBlueprintToForm(bp) {
   }
   setVal('bc-mp3-count', bp.mp3_per_video);
   setVal('bc-bg-count', bp.bg_count);
-  // target durasi
+  // target durasi (panel kini hanya menyediakan 'original'; blueprint lama
+  // yang memakai durasi tetap diarahkan ke 'original')
   const td = document.getElementById('bc-target-duration');
   if (td && bp.target_duration_hours !== undefined && bp.target_duration_hours !== null) {
     const v = bp.target_duration_hours;
-    if (v === 'original') td.value = 'original';
-    else if (['1', '3', '5', '10'].indexOf(String(v)) !== -1) td.value = String(v);
-    else { td.value = 'custom'; setVal('bc-custom-duration', parseFloat(v) || 2); }
+    let want = 'original';
+    if (v === 'original') want = 'original';
+    else if (['1', '3', '5', '10'].indexOf(String(v)) !== -1) want = String(v);
+    else want = 'custom';
+    if (!td.querySelector('option[value="' + want + '"]')) want = 'original';
+    td.value = want;
+    if (want === 'custom') setVal('bc-custom-duration', parseFloat(v) || 2);
     if (typeof onTargetDurationChange === 'function') onTargetDurationChange();
   }
   // resolusi
