@@ -3686,6 +3686,34 @@ def panel_agent_test():
                     "uptime_seconds": s["uptime_seconds"],
                     "youtube_connected": s["youtube_connected"]})
 
+
+# ── Panel "API Agen": dokumentasi (login PIN) ─────────────────────
+# Isi file dokumentasi API Agen untuk ditampilkan di panel, supaya Bos
+# bisa membacanya tanpa membuka GitHub. Hanya dua nama yang diizinkan
+# (tanpa path dari user) dan route ini tetap dijaga login PIN oleh
+# check_security — bukan bagian dari /api/agent/* (tanpa API key).
+_AGENT_DOCS = {
+    "api-agen": ("docs/API-AGEN.md", "Panduan API Agen"),
+    "openapi": ("docs/openapi.yaml", "Spesifikasi OpenAPI"),
+}
+
+
+@app.route('/api/panel_agent_docs/<name>', methods=['GET'])
+def panel_agent_docs(name):
+    entry = _AGENT_DOCS.get(name)
+    if entry is None:
+        return jsonify({"status": "error",
+                        "error": "Dokumen tidak dikenal"}), 404
+    path = os.path.join(BASE_DIR, entry[0])
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except FileNotFoundError:
+        return jsonify({"status": "error",
+                        "error": "File dokumentasi belum ada di server"}), 404
+    return jsonify({"status": "ok", "name": name,
+                    "title": entry[1], "content": content})
+
 # ── Panel "Google Drive" (login PIN, tanpa token) ──────────────────
 # Jalur ini KHUSUS untuk halaman panel web — status/koneksi Drive
 # lewat sesi login PIN. Token Drive tidak pernah dikirim ke browser.
