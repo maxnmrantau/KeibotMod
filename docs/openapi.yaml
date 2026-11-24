@@ -467,4 +467,10 @@ components:
           type: array
           default: []
           items:
-            type: number
+            oneOf:
+              - type: number
+                description: Durasi target dalam jam
+              - type: string
+                enum: ["original"]
+                description: Durasi asli audio (tanpa potong & tanpa loop)
+          description: "Durasi target per video. Panel hanya memakai 'original' (keputusan Bos 24 Nov)."
