@@ -1,0 +1,425 @@
+# KeibotMod — Agent API (OpenAPI 3.0)
+#
+# Spesifikasi mesin untuk API agen KeibotMod. Agen mana pun bisa membaca
+# file ini untuk mengetahui semua endpoint, parameter, dan bentuk respons
+# tanpa perlu membaca kode sumber.
+#
+# Panduan manusia (bahasa Indonesia) ada di API-AGEN.md di folder yang sama.
+#
+# Autentikasi: header X-API-Key pada SETIAP request. Kunci TIDAK ada di
+# file ini — Bos memberikannya terpisah bersama alamat VPS.
+# Base URL: http://<IP-VPS>:5000 (ganti <IP-VPS> dengan IP VPS KeibotMod).
+openapi: 3.0.3
+info:
+  title: KeibotMod Agent API
+  version: 1.0.0
+  description: |
+    API untuk mengendalikan KeibotMod dari luar panel web: cek kesehatan,
+    baca status/antrean, buat batch video, dan antre-ulang upload.
+    Panel web (login PIN) tetap terpisah; aksi yang butuh PIN (login
+    YouTube, sambung Google Drive, upload client_secret.json) tidak
+    tersedia lewat API ini.
+servers:
+  - url: http://<IP-VPS>:5000
+    description: VPS KeibotMod (ganti <IP-VPS> dengan IP sebenarnya)
+tags:
+  - name: agent
+    description: Endpoint agen (/api/agent/*)
+paths:
+  /api/agent/health:
+    get:
+      tags: [agent]
+      summary: Cek layanan hidup
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Layanan jalan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+  /api/agent/status:
+    get:
+      tags: [agent]
+      summary: Ringkasan status KeibotMod
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Ringkasan status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+  /api/agent/batches:
+    get:
+      tags: [agent]
+      summary: Daftar batch aktif
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: include_history
+          in: query
+          description: "Isi 1 untuk menyertakan riwayat (job selesai); 0 (default) hanya aktif"
+          schema:
+            type: string
+            enum: ["0", "1"]
+            default: "0"
+      responses:
+        "200":
+          description: Daftar batch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  count:
+                    type: integer
+                  batches:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TaskView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+  /api/agent/jobs:
+    get:
+      tags: [agent]
+      summary: Daftar job aktif + riwayat
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Jumlah job yang dikembalikan (1-50, default 20)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Daftar job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  count:
+                    type: integer
+                  jobs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TaskView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+  /api/agent/batch:
+    post:
+      tags: [agent]
+      summary: Buat batch video baru
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchCreateRequest"
+            example:
+              yt_id: UCxxxx
+              count: 3
+              interval_days: 1
+              start_date: "2026-11-25T19:00"
+              mp3_per_video: 5
+              bg_count: 1
+      responses:
+        "200":
+          description: Batch dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: 3 Video diproses!
+                  task_ids:
+                    type: array
+                    items:
+                      type: integer
+                    example: [101, 102, 103]
+        "400":
+          description: Input tidak valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: yt_id wajib diisi
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+  /api/agent/upload:
+    post:
+      tags: [agent]
+      summary: Antre-ulang satu task ke render/upload
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batch_id]
+              properties:
+                batch_id:
+                  type: integer
+                  description: ID task (angka) yang dimasukkan ulang ke antrean
+                  example: 101
+      responses:
+        "200":
+          description: Task dimasukkan ulang ke antrean
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Task dimasukkan ulang ke antrean render/upload
+                  task:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      title:
+                        type: string
+                      status:
+                        type: string
+        "400":
+          description: batch_id kosong atau bukan angka
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Task tidak punya blueprint atau sudah ada di antrean
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Kunci API agen dari /root/keibotmod/.agent.env (KEIBOT_AGENT_KEY) di VPS
+  responses:
+    Unauthorized:
+      description: API key salah atau tidak ada
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotConfigured:
+      description: API belum dikonfigurasi (KEIBOT_AGENT_KEY kosong di VPS)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        error:
+          type: string
+          example: API key salah atau tidak ada
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: keibot
+        ffmpeg:
+          type: boolean
+          description: ffmpeg ditemukan dan bisa dipakai
+        ffmpeg_path:
+          type: string
+          nullable: true
+          example: /usr/bin/ffmpeg
+        queue_size:
+          type: integer
+        uptime_seconds:
+          type: integer
+    ChannelInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        yt_id:
+          type: string
+        status:
+          type: string
+    TaskView:
+      type: object
+      description: Satu video/task dalam antrean atau riwayat
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+          description: Status bersih (tanpa HTML)
+        status_raw:
+          type: string
+          description: Status apa adanya dari worker
+        progress:
+          type: integer
+          nullable: true
+          description: Perkiraan 0-100, atau null bila tidak bisa diperkirakan
+          minimum: 0
+          maximum: 100
+        type:
+          type: string
+        publish_date:
+          type: string
+        yt_id:
+          type: string
+        duration:
+          type: number
+        finish_time:
+          type: string
+          nullable: true
+        video_url:
+          type: string
+          description: Link youtu.be, hanya bila sudah tayang
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        drive:
+          type: object
+          description: Status Google Drive (connected, mode, folders)
+          additionalProperties: true
+        counts:
+          type: object
+          properties:
+            batches_active:
+              type: integer
+            queued:
+              type: integer
+            rendering_or_uploading:
+              type: integer
+            queue_size:
+              type: integer
+            uploaded:
+              type: integer
+            failed:
+              type: integer
+            history_total:
+              type: integer
+            channels:
+              type: integer
+        youtube_connected:
+          type: boolean
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelInfo"
+        recent_jobs:
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/TaskView"
+    BatchCreateRequest:
+      type: object
+      required: [yt_id, start_date]
+      properties:
+        yt_id:
+          type: string
+          description: ID channel YouTube
+          example: UCxxxx
+        start_date:
+          type: string
+          description: "Format YYYY-MM-DDTHH:MM"
+          example: "2026-11-25T19:00"
+        count:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 1
+          description: Jumlah video dalam batch
+        interval_days:
+          type: number
+          exclusiveMinimum: 0
+          default: 1
+          description: Jarak hari antar video
+        mp3_per_video:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 5
+        bg_count:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 1
+        generated_titles:
+          type: array
+          default: []
+          items:
+            type: string
+        target_durations_array:
+          type: array
+          default: []
+          items:
+            type: number
