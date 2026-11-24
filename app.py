@@ -15,7 +15,7 @@ import datetime as dt
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import secrets
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, session, make_response
 import requests
 
 # ☁️ Google Drive (opsional) — modul terpisah; gagal impor = fitur nonaktif,
@@ -2844,7 +2844,14 @@ threading.Thread(target=background_worker, daemon=True).start()
 # 📊 API ENDPOINTS
 # ==========================================
 @app.route('/')
-def index(): return render_template('index.html')
+def index():
+    # FIX 24 Nov: panel tanpa header no-cache — tab yang sudah terbuka tetap
+    # memakai JS lama setelah deploy (upload 30 audio tetap 413 karena kode
+    # lama mengirim semua file sekaligus). Paksa browser selalu ambil baru.
+    resp = make_response(render_template('index.html'))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 @app.route('/api/notifications', methods=['GET'])
 def get_notifications():
