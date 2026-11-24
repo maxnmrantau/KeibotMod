@@ -1354,6 +1354,24 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
       </div>
 
       <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">📖 DOKUMENTASI API</span><span class="pill p-cyan">Repo: docs/</span></div>
+        <div class="card-body">
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);margin-bottom:12px">Panduan lengkap Agent API untuk agen AI lain — endpoint, contoh, dan kode error. Dokumen yang sama ada di GitHub (<code>docs/API-AGEN.md</code> dan <code>docs/openapi.yaml</code>).</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-p btn-sm" onclick="loadAgentDoc('api-agen')">📖 Panduan API Agen</button>
+            <button class="btn btn-g btn-sm" onclick="loadAgentDoc('openapi')">⚙️ Spesifikasi OpenAPI</button>
+          </div>
+          <div id="aa-doc-box" style="display:none;margin-top:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <b id="aa-doc-title" style="font-size:12px"></b>
+              <button class="btn btn-g btn-sm" onclick="document.getElementById('aa-doc-box').style.display='none'">✕ Tutup</button>
+            </div>
+            <pre id="aa-doc-content" style="max-height:420px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
         <div class="card-head"><span class="card-title">🧪 TES KONEKSI</span></div>
         <div class="card-body">
           <div style="font-family:var(--font-m);font-size:11px;color:var(--muted);margin-bottom:12px">Pemeriksaan dilakukan <b style="color:var(--text)">di server</b> (kunci tidak pernah dikirim ke browser). Klik tombol untuk menguji jalur Agent API dari dalam VPS.</div>
@@ -1709,7 +1727,7 @@ input[type=color] { padding:0; height:36px; width:100%; border:1px solid var(--b
               POST /api/agent/upload — render ulang + unggah task (batch_id)
             </p>
             <p style="color:var(--text2); font-size:11.5px;">
-              Semua endpoint memakai header <code>X-API-Key</code>. Tanpa kunci → <code>401</code>; kunci belum dipasang → <code>503</code>. Menu <b>🔑 API Agen</b> punya tombol <b>🧪 Tes Koneksi</b> untuk menguji jalur ini dari dalam VPS (kunci tidak pernah dikirim ke browser).
+              Semua endpoint memakai header <code>X-API-Key</code>. Tanpa kunci → <code>401</code>; kunci belum dipasang → <code>503</code>. Menu <b>🔑 API Agen</b> punya tombol <b>🧪 Tes Koneksi</b> untuk menguji jalur ini dari dalam VPS (kunci tidak pernah dikirim ke browser). Dokumentasi lengkapnya (panduan + spesifikasi OpenAPI) bisa dibaca di menu yang sama, kartu <b>📖 Dokumentasi API</b>, dan di repo GitHub folder <code>docs/</code>.
             </p>
           </div>
 
@@ -2026,6 +2044,28 @@ function testAgentApi() {
     toast(d.status === 'ok' ? 'Tes koneksi Agent API berhasil' : 'Tes koneksi menemukan masalah', d.status === 'ok' ? 'success' : 'error');
   }).catch(() => {
     if (box) box.innerHTML = '<span style="color:var(--accent2)">❌ Gagal menghubungi server untuk tes koneksi.</span>';
+  });
+}
+
+function loadAgentDoc(name) {
+  const box = document.getElementById('aa-doc-box');
+  const title = document.getElementById('aa-doc-title');
+  const content = document.getElementById('aa-doc-content');
+  if (!box || !content) return;
+  box.style.display = 'block';
+  if (title) title.textContent = '⏳ Memuat...';
+  content.textContent = '';
+  fetch('/api/panel_agent_docs/' + encodeURIComponent(name)).then(r => r.json()).then(d => {
+    if (d.status !== 'ok') {
+      if (title) title.textContent = '❌ Gagal memuat dokumen';
+      content.textContent = d.error || 'Dokumen tidak ditemukan.';
+      return;
+    }
+    if (title) title.textContent = '📖 ' + (d.title || name);
+    content.textContent = d.content || '';
+  }).catch(() => {
+    if (title) title.textContent = '❌ Gagal memuat dokumen';
+    content.textContent = 'Tidak bisa menghubungi server.';
   });
 }
 
