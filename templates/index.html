@@ -4675,7 +4675,7 @@ function renderTasks() {
       ...serverData.active.map(t => {
         const elap = t.start_ts ? ` • <span style="color:var(--accent);font-weight:700">⏱️ ${formatElapsed(t.start_ts)}</span>` : '';
         const startTime = t.render_start ? `Mulai: ${t.render_start}` : (t.time || '');
-        return `<div class="task-row"><div class="task-icon">⚙️</div><div class="task-info"><div class="task-name">${t.title || 'Task'}</div><div class="task-meta">${startTime}${elap}</div></div><span class="pill p-cyan" style="flex-shrink:0;max-width:220px;white-space:normal;line-height:1.3">${t.status || '—'}</span><button class="stop-btn" onclick="stopTask(${Number(t.id)})">Stop</button></div>`;
+        return `<div class="task-row"><div class="task-icon">⚙️</div><div class="task-info"><div class="task-name">${t.title || 'Task'}</div><div class="task-meta">${startTime}${elap}</div></div><span class="pill p-cyan" style="flex-shrink:0;max-width:220px;white-space:normal;line-height:1.3">${t.status || '—'}</span><button class="btn btn-g btn-sm" onclick="useTaskAsTemplate(${Number(t.id)})" title="Salin pengaturan task ini ke form Batch Creator">📋 Template</button><button class="stop-btn" onclick="stopTask(${Number(t.id)})">Stop</button></div>`;
       })
     ].join('');
   }
@@ -4694,6 +4694,69 @@ function renderTasks() {
 function stopTask(id) {
   if (!confirm('Hentikan paksa?')) return;
   fetch('/api/stop_task/' + id, { method: 'POST' }).then(r => r.json()).then(d => { toast(d.message, 'info'); fetchServerTasks(); }).catch(() => toast('Gagal menghentikan task', 'error'));
+}
+
+// ── Jadikan Template: salin pengaturan satu task aktif ke form Batch Creator ──
+// Blueprint hanya ada selama task masih aktif; task yang sudah tayang/selesai
+// tidak lagi menyimpan pengaturannya (dihapus Keibot untuk menghemat tempat).
+function useTaskAsTemplate(id) {
+  fetch('/api/panel_agent_blueprint/' + id).then(r => r.json()).then(d => {
+    if (d.status !== 'ok') { toast(d.error || 'Pengaturan tidak ditemukan', 'error'); return; }
+    applyBlueprintToForm(d.blueprint);
+    go('batch'); goStep(1);
+    toast('Pengaturan task #' + id + ' diterapkan ke form Batch Creator', 'success');
+  }).catch(() => toast('Gagal mengambil pengaturan task', 'error'));
+}
+
+function applyBlueprintToForm(bp) {
+  if (!bp) return;
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = v; };
+  const setChk = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.checked = !!v; };
+  const show = (id, on, disp) => { const el = document.getElementById(id); if (el) el.style.display = on ? disp : 'none'; };
+  // channel + jumlah
+  const chEl = document.getElementById('bc-channel');
+  if (chEl && bp.yt_id && chEl.querySelector('option[value="' + bp.yt_id + '"]')) {
+    chEl.value = bp.yt_id;
+    if (typeof onBcChannelChange === 'function') onBcChannelChange();
+  }
+  setVal('bc-mp3-count', bp.mp3_per_video);
+  setVal('bc-bg-count', bp.bg_count);
+  // target durasi
+  const td = document.getElementById('bc-target-duration');
+  if (td && bp.target_duration_hours !== undefined && bp.target_duration_hours !== null) {
+    const v = bp.target_duration_hours;
+    if (v === 'original') td.value = 'original';
+    else if (['1', '3', '5', '10'].indexOf(String(v)) !== -1) td.value = String(v);
+    else { td.value = 'custom'; setVal('bc-custom-duration', parseFloat(v) || 2); }
+    if (typeof onTargetDurationChange === 'function') onTargetDurationChange();
+  }
+  // resolusi
+  const resEl = document.getElementById('bc-resolution');
+  if (resEl && (bp.resolution === '720' || bp.resolution === '1080')) resEl.value = bp.resolution;
+  // kartu-kartu (judul mengambang, playlist, watermark, timestamp)
+  setChk('bc-use-floating-card', bp.use_floating_card);
+  setChk('bc-use-tracklist', bp.use_tracklist);
+  show('vis-tracklist-wrap', !!bp.use_tracklist, 'block');
+  setChk('bc-use-watermark', bp.use_watermark);
+  show('vis-watermark-wrap', !!bp.use_watermark, 'block');
+  setChk('bc-use-timestamp', bp.use_timestamp);
+  show('vis-ts-wrap', !!bp.use_timestamp, 'flex');
+  // smart cut
+  setChk('bc-smart-cut', bp.smart_cut);
+  show('sc-settings', !!bp.smart_cut, 'flex');
+  setVal('bc-cut-duration', bp.cut_duration);
+  setVal('bc-cut-remainder', bp.cut_remainder);
+  setChk('bc-cut-use-remainder', bp.cut_use_remainder);
+  setChk('bc-use-transition', bp.use_transition);
+  show('sc-trans-dur', !!bp.use_transition, 'inline-block');
+  show('sc-trans-label', !!bp.use_transition, 'inline');
+  // visualizer: pakai pemetaan loadVisPreset yang sudah ada
+  if (bp.vis_config && typeof loadVisPreset === 'function' && typeof visPresets !== 'undefined') {
+    visPresets['__template__'] = bp.vis_config;
+    loadVisPreset('__template__');
+    delete visPresets['__template__'];
+  }
+  if (typeof updateBatchPreview === 'function') updateBatchPreview();
 }
 
 function cancelBrowserTask(id) {
