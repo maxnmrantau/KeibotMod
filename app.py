@@ -3714,6 +3714,24 @@ def panel_agent_docs(name):
     return jsonify({"status": "ok", "name": name,
                     "title": entry[1], "content": content})
 
+
+@app.route('/api/panel_agent_blueprint/<int:task_id>', methods=['GET'])
+def panel_agent_blueprint(task_id):
+    """Pengaturan lengkap (blueprint) satu task aktif, untuk tombol
+    "Jadikan Template" di Task Monitor — dibaca in-process lewat sesi
+    login PIN (tanpa API key ke browser). Sama seperti endpoint Agent
+    API-nya: hanya task aktif yang masih punya blueprint."""
+    for t in active_tasks:
+        if t.get('id') == task_id:
+            bp = t.get('blueprint')
+            if not bp:
+                return jsonify({"status": "error",
+                                "error": "Task ini tidak punya pengaturan tersimpan (blueprint)"}), 404
+            return jsonify({"status": "ok", "task_id": task_id,
+                            "title": t.get('title'), "blueprint": bp})
+    return jsonify({"status": "error",
+                    "error": "Task aktif tidak ditemukan (mungkin sudah tayang/selesai)"}), 404
+
 # ── Panel "Google Drive" (login PIN, tanpa token) ──────────────────
 # Jalur ini KHUSUS untuk halaman panel web — status/koneksi Drive
 # lewat sesi login PIN. Token Drive tidak pernah dikirim ke browser.
