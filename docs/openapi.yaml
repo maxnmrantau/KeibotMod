@@ -243,6 +243,51 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "503":
           $ref: "#/components/responses/NotConfigured"
+  /api/agent/batch/{task_id}:
+    get:
+      tags: [agent]
+      summary: Pengaturan lengkap (blueprint) satu task aktif
+      description: |
+        Untuk meniru pengaturan satu task aktif sebagai template batch
+        berikutnya. Hanya task aktif yang masih punya blueprint; task
+        yang sudah selesai/tayang menjawab 404 karena Keibot menghapus
+        blueprint-nya untuk menghemat tempat.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: ID task (angka)
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Blueprint task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  task:
+                    $ref: "#/components/schemas/TaskView"
+                  blueprint:
+                    type: object
+                    description: Pengaturan lengkap task (channel, jumlah lagu/background, durasi target, vis_config, resolusi, kartu-kartu, Smart Cut, dll.)
+                    additionalProperties: true
+        "404":
+          description: Task aktif tidak ditemukan atau tidak punya blueprint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
 components:
   securitySchemes:
     ApiKeyAuth:
