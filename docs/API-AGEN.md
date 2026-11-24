@@ -35,6 +35,7 @@ atau `"error"`).
 | GET | `/api/agent/jobs` | Daftar job aktif + riwayat (`?limit=1-50`, default 20) |
 | POST | `/api/agent/batch` | Buat batch video baru |
 | POST | `/api/agent/upload` | Masukkan ulang satu task ke antrean render/upload |
+| GET | `/api/agent/batch/<id>` | Pengaturan lengkap (blueprint) satu task aktif — untuk ditiru batch berikutnya |
 
 Tidak ada endpoint hapus/batalkan lewat API ini.
 
@@ -130,6 +131,25 @@ curl -s -X POST -H "X-API-Key: <KUNCI_API>" -H "Content-Type: application/json" 
 render/upload", "task": {"id": 101, "title": "...", "status": "In
 Factory Queue ⚙️"}}`. Gagal: 400 (batch_id kosong/bukan angka) atau
 409 (task tidak punya blueprint / sudah ada di antrean).
+
+### GET /api/agent/batch/<id>
+
+Mengambil pengaturan lengkap (blueprint) satu task AKTIF, supaya
+agen bisa meniru pengaturannya untuk batch berikutnya ("jadikan
+template"): channel, jumlah lagu/background, durasi target,
+pengaturan visualizer (`vis_config`), resolusi, Floating Card,
+Playlist, Watermark, Timestamp, Smart Cut, dan lain-lain.
+
+```bash
+curl -s -H "X-API-Key: <KUNCI_API>" http://<IP-VPS>:5000/api/agent/batch/101
+```
+
+Sukses (200): `{"status": "ok", "task": {...}, "blueprint": {...}}`.
+Gagal 404: task tidak ditemukan, atau task sudah selesai/tayang —
+Keibot menghapus blueprint task yang sudah selesai untuk menghemat
+tempat, jadi salin pengaturannya selagi task masih antre. Panel web
+punya tombol yang sama: **📋 Template** di tiap baris task aktif
+(Task Monitor), yang menerapkan blueprint ke form Batch Creator.
 
 ## 3. Format Task
 
