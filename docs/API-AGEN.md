@@ -108,7 +108,7 @@ Body JSON:
 | `mp3_per_video` | Tidak (default 5) | Bilangan bulat 1–100 |
 | `bg_count` | Tidak (default 1) | Bilangan bulat 1–50 |
 | `generated_titles` | Tidak (default []) | Daftar judul |
-| `target_durations_array` | Tidak (default []) | Daftar durasi target |
+| `target_durations_array` | Tidak (default []) | Daftar durasi target (angka jam atau `'original'`; panel hanya memakai `'original'`) |
 
 Sukses (200): `{"status": "success", "message": "3 Video diproses!",
 "task_ids": [101, 102, 103]}`. Gagal validasi: 400 dengan `message`
