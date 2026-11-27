@@ -1066,15 +1066,22 @@ class VisualEngine:
     #  SPECTRUM BARS  (efek asli)
     # ═══════════════════════════════════════════════════════════
     def _draw_spectrum(self, frame, n, idle, space, px, py, wp, max_h, w, h, bar_style):
-        bar_w = int(max(1, (w * wp - space * (n - 1)) / n))
-        s_x   = int((w * px) - (w * wp / 2))
-        b_y   = int(h * py)
+        # 🐛 FIX: lebar bar pakai float + posisi kumulatif dibulatkan, agar span
+        # total tepat = w*wp. Sebelumnya int() memotong pecahan tiap bar
+        # (mis. 6.49 -> 6), sehingga di lebar 100% + 151 bar, sisi kanan
+        # kosong ~74px. Sekarang bar terakhir berakhir tepat di tepi kanan.
+        tot_w = w * wp
+        bar_w_f = max(1.0, (tot_w - space * (n - 1)) / n)
+        s_x = int((w * px) - (tot_w / 2))
+        b_y = int(h * py)
 
         for i in range(n):
             height = int(max(idle, min(max_h, self.bar_h[i] * max_h)))
             if height <= 0: continue
-            x1 = s_x + i * (bar_w + space)
-            x2 = x1 + bar_w
+            x1 = s_x + int(round(i * (bar_w_f + space)))
+            x2 = s_x + int(round(i * (bar_w_f + space) + bar_w_f))
+            bar_w = x2 - x1
+            if bar_w <= 0: continue
 
             if bar_style == 'center':
                 y1 = b_y - (height // 2); y2 = b_y + (height // 2)
@@ -1161,16 +1168,22 @@ class VisualEngine:
     #  MIRROR SPECTRUM  (bar spectrum + refleksi simetris)
     # ═══════════════════════════════════════════════════════════
     def _draw_mirror(self, frame, n, idle, space, px, py, wp, max_h, w, h):
-        bar_w = int(max(1, (w * wp - space * (n - 1)) / n))
-        s_x   = int((w * px) - (w * wp / 2))
-        b_y   = int(h * py)
+        # 🐛 FIX: sama seperti _draw_spectrum — lebar bar float + posisi
+        # kumulatif dibulatkan agar span total tepat = w*wp (sisi kanan
+        # tidak kosong saat lebar 100%).
+        tot_w = w * wp
+        bar_w_f = max(1.0, (tot_w - space * (n - 1)) / n)
+        s_x = int((w * px) - (tot_w / 2))
+        b_y = int(h * py)
         half_h = max_h // 2
 
         for i in range(n):
             height = int(max(idle, min(half_h, self.bar_h[i] * half_h)))
             if height <= 0: continue
-            x1 = s_x + i * (bar_w + space)
-            x2 = x1 + bar_w
+            x1 = s_x + int(round(i * (bar_w_f + space)))
+            x2 = s_x + int(round(i * (bar_w_f + space) + bar_w_f))
+            bar_w = x2 - x1
+            if bar_w <= 0: continue
 
             # bar ke atas (full opacity)
             y1_up = b_y - height; y2_up = b_y
@@ -1197,15 +1210,20 @@ class VisualEngine:
     def _draw_neon_glow(self, frame, n, idle, space, px, py, wp, max_h, w, h):
         # gambar di overlay terpisah lalu blur untuk efek bloom
         overlay = np.zeros_like(frame)
-        bar_w = int(max(1, (w * wp - space * (n - 1)) / n))
-        s_x   = int((w * px) - (w * wp / 2))
-        b_y   = int(h * py)
+        # 🐛 FIX: sama seperti _draw_spectrum — lebar bar float + posisi
+        # kumulatif dibulatkan agar span total tepat = w*wp.
+        tot_w = w * wp
+        bar_w_f = max(1.0, (tot_w - space * (n - 1)) / n)
+        s_x = int((w * px) - (tot_w / 2))
+        b_y = int(h * py)
 
         for i in range(n):
             height = int(max(idle, min(max_h, self.bar_h[i] * max_h)))
             if height <= 0: continue
-            x1 = s_x + i * (bar_w + space)
-            x2 = x1 + bar_w
+            x1 = s_x + int(round(i * (bar_w_f + space)))
+            x2 = s_x + int(round(i * (bar_w_f + space) + bar_w_f))
+            bar_w = x2 - x1
+            if bar_w <= 0: continue
             y1 = b_y - height; y2 = b_y
 
             x1s = max(0, min(w, x1)); x2s = max(0, min(w, x2))
@@ -1256,17 +1274,21 @@ class VisualEngine:
     # ═══════════════════════════════════════════════════════════
     def _draw_pixel(self, frame, n, idle, space, px, py, wp, max_h, w, h):
         # kurangi bar count untuk efek blocky, pakai blok besar
-        block_size = max(6, int(w * wp / n))
+        # 🐛 FIX: pitch blok pakai float + posisi kumulatif dibulatkan agar
+        # span total tepat = w*wp (sebelumnya int() memotong -> sisi kanan kosong).
+        tot_w = w * wp
+        pitch_f = max(6.0, tot_w / n)
         gap = max(2, space)
-        bar_w = block_size - gap
-        s_x   = int((w * px) - (w * wp / 2))
-        b_y   = int(h * py)
+        s_x = int((w * px) - (tot_w / 2))
+        b_y = int(h * py)
         block_unit = max(4, int(max_h / 16))  # tinggi per pixel block
 
         for i in range(n):
             height = int(max(idle, min(max_h, self.bar_h[i] * max_h)))
             if height <= 0: continue
-            x1 = s_x + i * (block_size)
+            x1 = s_x + int(round(i * pitch_f))
+            x2 = s_x + int(round((i + 1) * pitch_f))
+            bar_w = max(1, (x2 - x1) - gap)
 
             blocks = max(1, height // block_unit)
             for b in range(blocks):
@@ -1286,14 +1308,20 @@ class VisualEngine:
     # ═══════════════════════════════════════════════════════════
     def _draw_double_symmetric(self, frame, n, idle, space, px, py, wp, max_h, w, h):
         half = n // 2
-        bar_w = int(max(1, (w * wp - space * (n - 1)) / n))
-        s_x   = int((w * px) - (w * wp / 2))
-        b_y   = int(h * py)
+        # 🐛 FIX: sama seperti _draw_spectrum — lebar bar float + posisi
+        # kumulatif dibulatkan agar span total tepat = w*wp.
+        tot_w = w * wp
+        bar_w_f = max(1.0, (tot_w - space * (n - 1)) / n)
+        s_x = int((w * px) - (tot_w / 2))
+        b_y = int(h * py)
 
         for i in range(n):
             height = int(max(idle, min(max_h, self.bar_h[i] * max_h)))
             if height <= 0: continue
-            x1 = s_x + i * (bar_w + space)
+            x1 = s_x + int(round(i * (bar_w_f + space)))
+            x2 = s_x + int(round(i * (bar_w_f + space) + bar_w_f))
+            bar_w = x2 - x1
+            if bar_w <= 0: continue
             y1 = b_y - height; y2 = b_y
 
             x1s = max(0, min(w, x1)); x2s = max(0, min(w, x1 + bar_w))
@@ -1316,13 +1344,16 @@ class VisualEngine:
     #  DOTS PIXEL  (lingkaran di puncak bar)
     # ═══════════════════════════════════════════════════════════
     def _draw_dots_pixel(self, frame, n, idle, space, px, py, wp, max_h, w, h):
-        bar_w = max(2, int((w * wp - space * (n - 1)) / n))
-        s_x   = int((w * px) - (w * wp / 2))
-        b_y   = int(h * py)
+        # 🐛 FIX: sama seperti _draw_spectrum — lebar bar float + posisi
+        # kumulatif dibulatkan agar span total tepat = w*wp.
+        tot_w = w * wp
+        bar_w_f = max(2.0, (tot_w - space * (n - 1)) / n)
+        s_x = int((w * px) - (tot_w / 2))
+        b_y = int(h * py)
         for i in range(n):
             height = int(max(idle, min(max_h, self.bar_h[i] * max_h)))
             if height <= 0: continue
-            cx = s_x + i * (bar_w + space) + bar_w // 2
+            cx = s_x + int(round(i * (bar_w_f + space) + bar_w_f / 2))
             cy = b_y - height
             r = max(2, int(height * 0.3))
             color = self._bar_color(i, n)
